@@ -1,0 +1,11 @@
+[package]
+name = "xaio"
+version = "0.1.0"
+edition = "2021"
+crate-type   = ["rlib", "cdylib"]
+
+[dependencies]
+libc = "0.2.167"
+
+[build-dependencies]
+bindgen = "0.65.1"
