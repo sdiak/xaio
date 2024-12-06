@@ -1,4 +1,7 @@
 mod capi;
+mod selector;
+mod socket;
+pub use socket::RawSocketFd;
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
