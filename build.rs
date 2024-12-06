@@ -1,4 +1,3 @@
-use std::env;
 use std::path::PathBuf;
 
 fn main() {
@@ -16,6 +15,8 @@ fn main() {
         // The input header we would like to generate
         // bindings for.
         .header("include/xaio.h")
+        .allowlist_type("xaio.*")
+        .allowlist_function("xaio.*")
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))

@@ -3,8 +3,8 @@
 
 #include <stdint.h>
 
-struct xiocp_s;
+struct xaiocp_s;
 
-int32_t xiocp_new(struct xiocp_s **result);
+int32_t xaiocp_new(struct xaiocp_s **result);
 
 #endif /* !defined(XAIO_H) */
