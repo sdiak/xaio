@@ -6,5 +6,6 @@ pub struct xaiocp_s {
     _unused: [u8; 0],
 }
 extern "C" {
-    pub fn xaiocp_new(result: *mut *mut xaiocp_s) -> i32;
+    #[doc = " Creates a new completion port bound to the current thread.\n @param pport @c *pport receives a new completion port address or @c NULL on error.\n @retval @c 0 on success\n @retval @c -EINVAL when @c pport==NULL\n @retval @c -ENOMEM when the system is out of memory"]
+    pub fn xaiocp_new(pport: *mut *mut xaiocp_s) -> i32;
 }
