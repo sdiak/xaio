@@ -31,7 +31,8 @@ extern "C" {
     /// Creates a new completion port bound to the current thread.
     ///
     /// # Arguments
-    ///   - pport `*pport` receives a new completion port address or `NULL` on error.
+    ///   - `pport` `*pport` receives a new completion port address or `NULL` on error.
+    ///   - `opt_driver` driver to **move** to the port or `NULL` to use the default driver.
     ///
     /// # Returns
     ///   -  `0` on success
