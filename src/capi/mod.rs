@@ -3,6 +3,8 @@
 #![allow(non_snake_case)]
 #![allow(unused)]
 
+// cbindgen --config cbindgen.toml --crate xaio --lang c --cpp-compat
+
 mod driver;
 
 /// A thread-local completion port

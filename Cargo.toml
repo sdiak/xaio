@@ -26,6 +26,3 @@ features = [
 ]
 
 
-[build-dependencies]
-bindgen = "0.65.1"
-
