@@ -1,19 +1,25 @@
-use crate::Driver;
-use crate::Sub;
+use crate::{Driver, DriverConfig, Sub};
 use std::io::{Error, ErrorKind, Result};
 
 #[derive(Debug)]
 pub struct DriverNone {
     name: &'static str,
+    config: DriverConfig,
 }
 
 impl Default for DriverNone {
     fn default() -> Self {
-        Self { name: "DriverNone" }
+        Self {
+            name: "DriverNone",
+            config: DriverConfig::default(),
+        }
     }
 }
 
 impl Driver for DriverNone {
+    fn config(&self) -> &DriverConfig {
+        &self.config
+    }
     fn name(&self) -> &'static str {
         self.name
     }

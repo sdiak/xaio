@@ -1,4 +1,4 @@
-use crate::{Driver, DriverConfig, DriverFlags, Sub};
+use crate::{saturating_opt_duration_to_timespec, Driver, DriverConfig, DriverFlags, Sub};
 use std::io::{Error, ErrorKind, Result};
 
 const BUFFER_SIZE: usize = 256usize;
@@ -44,6 +44,13 @@ impl DriverEPoll {
             buffer: unsafe { std::mem::MaybeUninit::zeroed().assume_init() },
         })
     }
+    fn process_events(&mut self, nevents: usize) -> i32 {
+        let mut nuser_events = 0i32;
+        for i in 0usize..nevents {
+            todo!();
+        }
+        nuser_events
+    }
 }
 
 impl Drop for DriverEPoll {
@@ -61,13 +68,10 @@ impl Drop for DriverEPoll {
     }
 }
 
-// impl Default for DriverEPoll {
-//     fn default() -> Self {
-//         Self { epfd: -1 as _ }
-//     }
-// }
-
 impl Driver for DriverEPoll {
+    fn config(&self) -> &DriverConfig {
+        &self.config
+    }
     fn name(&self) -> &'static str {
         "DriverEPoll"
     }
@@ -79,24 +83,25 @@ impl Driver for DriverEPoll {
     }
     fn wait(
         &mut self,
-        _timeout: Option<std::time::Duration>,
+        timeout: Option<std::time::Duration>,
         _ready_list: &mut crate::SubList,
     ) -> std::io::Result<i32> {
+        let mut ts_mem = libc::timespec {
+            tv_nsec: 0 as _,
+            tv_sec: 0 as _,
+        };
         let n_events = unsafe {
             libc::epoll_pwait2(
                 self.epollfd,
                 self.buffer.as_mut_ptr(),
                 BUFFER_SIZE as libc::c_int,
-                std::ptr::null(), // FIXME:
+                saturating_opt_duration_to_timespec(timeout, &mut ts_mem), // SAFETY: ts_mem is live for the whole function
                 std::ptr::null(),
             )
         };
         if n_events < 0 {
             return Err(Error::last_os_error());
         }
-        for i in 0usize..(n_events as usize) {
-            // TODO:
-        }
-        Err(Error::from(ErrorKind::Unsupported))
+        Ok(self.process_events(n_events as usize))
     }
 }

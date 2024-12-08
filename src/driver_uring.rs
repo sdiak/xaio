@@ -23,9 +23,9 @@ impl Driver for DriverURing {
     fn cancel(&mut self, _sub: std::pin::Pin<&Sub>) -> std::io::Result<()> {
         Err(Error::from(ErrorKind::NotFound))
     }
-    fn wait(
+    fn wait_ms(
         &mut self,
-        _timeout: Option<std::time::Duration>,
+        timeout_ms: i32,
         _ready_list: &mut crate::SubList,
     ) -> std::io::Result<i32> {
         Err(Error::from(ErrorKind::Unsupported))

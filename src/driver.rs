@@ -5,6 +5,8 @@ use std::{pin::Pin, time::Duration};
 pub trait Driver {
     fn name(&self) -> &'static str;
 
+    fn config(&self) -> &DriverConfig;
+
     fn wait(&mut self, timeout: Option<Duration>, ready_list: &mut SubList)
         -> std::io::Result<i32>;
 
