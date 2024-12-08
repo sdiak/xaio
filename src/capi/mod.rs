@@ -3,9 +3,12 @@
 #![allow(non_snake_case)]
 #![allow(unused)]
 
-// cbindgen --config cbindgen.toml --crate xaio --lang c --cpp-compat
-
+// cbindgen --config cbindgen.toml --crate xaio
 mod driver;
+
+#[cfg_attr(target_os = "linux", path = "driver_epoll_linux.rs")]
+#[cfg_attr(not(target_os = "linux"), path = "driver_epoll_unsupported.rs")]
+mod rawpoll;
 
 /// A thread-local completion port
 #[repr(C)]
@@ -38,5 +41,6 @@ extern "C" {
     ///   -  `0` on success
     ///   -  `-EINVAL` when `pport == NULL`
     ///   -  `-ENOMEM` when the system is out of memory
+    #[must_use]
     pub fn xcp_new(pport: *mut *mut xcp_s) -> i32;
 }

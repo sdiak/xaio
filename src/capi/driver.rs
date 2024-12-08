@@ -1,5 +1,8 @@
-/// Tries to reuse the sharable driver handle in `xdriver_params_s::attach_handle`
-pub const XDRIVER_ATTACH_HANDLE: u32 = 0x00000001u32;
+/// Tries to reuse the sharable driver handle in `xdriver_params_s::attach_handle
+pub const XDRIVER_FLAG_ATTACH_HANDLE: u32 = 0x00000001u32;
+pub const XDRIVER_FLAG_CLOSE_ON_EXEC: u32 = 0x00000002u32;
+
+use std::{alloc::Layout, default, ffi::c_void, pin::Pin, usize};
 
 use crate::capi::{xaio_s, xcp_s};
 
@@ -8,54 +11,108 @@ use crate::capi::{xaio_s, xcp_s};
 #[derive(Debug, Copy, Clone)]
 pub struct xdriver_params_s {
     /// submission queue depth
-    submission_queue_depth: i32,
+    pub submission_queue_depth: i32,
     /// completion queue depth
-    completion_queue_depth: i32,
+    pub completion_queue_depth: i32,
     /// kernel busy-polling loop timeout in milliseconds, a value of <= 0 deactivate kernel polling
-    kernel_poll_timeout_ms: i32,
+    pub kernel_poll_timeout_ms: i32,
     /// Flags
-    flags: u32,
+    pub flags: u32,
+    /// A sharable driver handle when (flags & XDRIVER_FLAG_ATTACH_HANDLE)
+    pub attach_handle: usize,
     /// An hint on the maximal number of file descriptor
-    max_number_of_fd_hint: i32,
-    reserved_: [i32; 9],
-    /// A sharable driver handle when (flags & XDRIVER_ATTACH_HANDLE)
-    attach_handle: usize,
+    pub max_number_of_fd_hint: i32,
+    pub reserved_: i32,
+}
+#[no_mangle]
+pub unsafe extern "C" fn xdriver_params_default(
+    params: *mut xdriver_params_s,
+) -> *mut xdriver_params_s {
+    if !params.is_null() {
+        *params = xdriver_params_s::default();
+    }
+    params
 }
 
-const DD: usize = std::mem::size_of::<xdriver_params_s>();
+impl Default for xdriver_params_s {
+    fn default() -> Self {
+        Self {
+            submission_queue_depth: 64,
+            completion_queue_depth: 128,
+            kernel_poll_timeout_ms: 1000,
+            flags: XDRIVER_FLAG_CLOSE_ON_EXEC,
+            attach_handle: usize::MAX,
+            max_number_of_fd_hint: 256,
+            reserved_: 0,
+        }
+    }
+}
 
 /// IO Driver
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct xdriver_s {
-    clazz: *const xdriver_class_s,
-    params: xdriver_params_s,
+    pub(super) clazz: &'static xdriver_class_s,
+    pub(super) params: xdriver_params_s,
 }
 
-extern "C" {
-    /// Creates a new driver.
-    ///
-    /// # Arguments
-    ///   - `pdriver` `*pdriver` receives the new driver address or `NULL` on error.
-    ///   - `opt_clazz` Optional clazz or `NULL` for defaults.
-    ///   - `opt_params` Optional parameters hints or `NULL` for defaults.
-    ///
-    /// # Returns
-    ///   -  `0` on success
-    ///   -  `-EINVAL` when `pdriver == NULL`
-    ///   -  `-ENOMEM` when the system is out of memory
-    pub fn xdriver_new(
-        pdriver: *mut *mut xdriver_s,
-        opt_clazz: *const xdriver_class_s,
-        opt_params: *const xdriver_params_s,
-    ) -> i32;
+#[no_mangle]
+pub unsafe extern "C" fn xdriver_class_default() -> &'static xdriver_class_s {
+    todo!()
+}
+
+/// Creates a new driver.
+///
+/// # Arguments
+///   - `pdriver` `*pdriver` receives the new driver address or `NULL` on error.
+///   - `opt_clazz` Optional clazz or `NULL` for defaults.
+///   - `opt_params` Optional parameters hints or `NULL` for defaults.
+///
+/// # Returns
+///   -  `0` on success
+///   -  `-EINVAL` when `pdriver == NULL`
+///   -  `-ENOMEM` when the system is out of memory
+#[no_mangle]
+#[must_use]
+pub unsafe extern "C" fn xdriver_new(
+    pdriver: *mut *mut xdriver_s,
+    opt_clazz: Option<&'static xdriver_class_s>,
+    opt_params: Option<&xdriver_params_s>,
+) -> i32 {
+    if pdriver.is_null() {
+        return -libc::EINVAL;
+    }
+    *pdriver = std::ptr::null_mut();
+    let clazz = opt_clazz.unwrap_or(xdriver_class_default());
+
+    let mut params_memory = xdriver_params_s::default();
+    let params = opt_params.unwrap_or(&*((*clazz).default_params)(&mut params_memory));
+
+    let driver: *mut xdriver_s = std::alloc::alloc_zeroed(
+        Layout::from_size_align((*clazz).instance_size, (*clazz).instance_align as _)
+            .expect("Invalid layout"),
+    ) as _;
+    if driver.is_null() {
+        return -libc::ENOMEM;
+    }
+    (*driver).clazz = clazz;
+    (*driver).params = *params;
+    *pdriver = driver;
+    0
+}
+
+pub(crate) extern "C" fn xdriver_is_supported() -> bool {
+    true
+}
+pub(crate) extern "C" fn driver_is_not_supported() -> bool {
+    true
 }
 
 type xdriver_is_supported_m = unsafe extern "C" fn() -> bool;
 type xdriver_default_params_m =
-    unsafe extern "C" fn(sizeof_params: usize, params: *mut xdriver_params_s) -> ();
-type xdriver_open_m = unsafe extern "C" fn(thiz: *mut (), port: *const xcp_s) -> i32;
-type xdriver_close_m = unsafe extern "C" fn(thiz: *mut (), port: *const xcp_s) -> ();
+    unsafe extern "C" fn(params: &mut xdriver_params_s) -> &mut xdriver_params_s;
+type xdriver_open_m = unsafe extern "C" fn(thiz: &mut c_void, port: &xcp_s) -> i32;
+type xdriver_close_m = unsafe extern "C" fn(thiz: &mut c_void, port: &xcp_s) -> ();
 /// Get the driver native handle
 ///
 /// # Arguments
@@ -65,10 +122,8 @@ type xdriver_close_m = unsafe extern "C" fn(thiz: *mut (), port: *const xcp_s) -
 /// # Returns
 ///   -  `0` on success
 ///   -  `-EINVAL` when `thiz == NULL`
-///   -  `-EINVAL` when `phandle == NULL`
 ///   -  `-EBADF` when this driver is not backed by a native handle
-type xdriver_get_native_handle_m =
-    unsafe extern "C" fn(thiz: *const (), phandle: *mut usize) -> i32;
+type xdriver_get_native_handle_m = unsafe extern "C" fn(thiz: &c_void, phandle: &mut usize) -> i32;
 
 /// Wait for at least one event or for the given timeout to expire.
 ///
@@ -81,7 +136,7 @@ type xdriver_get_native_handle_m =
 ///  - `>= 0` the number of completed events
 ///  - `< 0` an error descriptor
 type xdriver_wait_m =
-    unsafe extern "C" fn(thiz: *mut (), timeout: i32, events_sink: *mut ()) -> i32;
+    unsafe extern "C" fn(thiz: &mut c_void, timeout: i32, events_sink: &mut c_void) -> i32;
 
 /// Submits a new asynchronous operation
 ///
@@ -94,7 +149,7 @@ type xdriver_wait_m =
 ///  - `-ENOSYS` when the operation op-code is not supported,
 ///  - `-EBUSY` when the completion queue is full and the user should call `xdriver_class_s::wait`,
 ///  - `<= 0` any other error reported by the underlying system io multiplexer.
-type xdriver_submit_m = unsafe extern "C" fn(thiz: *mut (), op: *mut xaio_s) -> i32;
+type xdriver_submit_m = unsafe extern "C" fn(thiz: &mut c_void, op: Pin<&mut xaio_s>) -> i32;
 
 /// Attemps to cancel an asynchronous operation,
 /// when this method succeed, the operation will not appear in `xdriver_class_s::wait` and the caller owns the memory.
@@ -109,25 +164,26 @@ type xdriver_submit_m = unsafe extern "C" fn(thiz: *mut (), op: *mut xaio_s) -> 
 ///  - `-ENOENT` when the operation was not found,
 ///  - `-EALREADY` when the operation is in progress,
 ///  - `-EBUSY` when the completion queue is full and the user should call `xdriver_class_s::wait`,
-type xdriver_cancel_m = unsafe extern "C" fn(thiz: *mut (), op: *const xaio_s) -> i32;
+type xdriver_cancel_m = unsafe extern "C" fn(thiz: &mut c_void, op: Pin<&xaio_s>) -> i32;
 
 /// IO Driver class
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct xdriver_class_s {
-    name: *const libc::c_char,
-    flags: u32,
-    instance_size: u32,
+    pub(crate) name: *const libc::c_char,
+    pub(crate) flags: u32,
+    pub(crate) instance_align: u32,
+    pub(crate) instance_size: usize,
 
-    is_supported: xdriver_is_supported_m,
-    opt_default_params: xdriver_default_params_m,
+    pub(crate) is_supported: xdriver_is_supported_m,
+    pub(crate) default_params: xdriver_default_params_m,
 
-    open: xdriver_open_m,
-    close: xdriver_close_m,
-    get_native_handle: xdriver_get_native_handle_m,
+    pub(crate) open: xdriver_open_m,
+    pub(crate) close: xdriver_close_m,
+    pub(crate) get_native_handle: xdriver_get_native_handle_m,
 
-    wait: xdriver_wait_m,
+    pub(crate) wait: xdriver_wait_m,
 
-    submit: xdriver_submit_m,
-    cancel: xdriver_cancel_m,
+    pub(crate) submit: xdriver_submit_m,
+    pub(crate) cancel: xdriver_cancel_m,
 }

@@ -4,11 +4,15 @@ version = "0.1.0"
 edition = "2021"
 crate-type   = ["rlib", "cdylib", "lib"]
 
+[lib]
+name="xaio"
+crate-type = ["cdylib", "lib"]
+
 [dependencies]
-# cbindgen = "0.27.0"
 libc = "0.2.167"
 enum_dispatch = "0.3.13"
 bitflags = "2.6.0"
+log = "0.4.22"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["winsock2"] }
@@ -26,3 +30,5 @@ features = [
 ]
 
 
+[build-dependencies]
+cbindgen = "0.27.0"
