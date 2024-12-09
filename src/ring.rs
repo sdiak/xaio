@@ -18,11 +18,12 @@ pub(crate) struct RingInner {
 }
 
 pub struct Ring {
-    inner: Box<RingInner>,
+    inner: Box<RefCell<RingInner>>,
 }
 impl Drop for Ring {
     fn drop(&mut self) {
-        if self.inner.rc > 1 || self.inner.arc.load(std::sync::atomic::Ordering::Relaxed) != 0 {
+        let inner = self.inner.borrow();
+        if inner.rc > 1 || inner.arc.load(std::sync::atomic::Ordering::Relaxed) != 0 {
             log::warn!("Need to cancel everything and wait"); // TODO:
         }
     }
@@ -30,7 +31,7 @@ impl Drop for Ring {
 impl Ring {
     pub fn new(driver: Box<Driver>) -> Self {
         Self {
-            inner: Box::new(RingInner::new(driver)),
+            inner: Box::new(RefCell::new(RingInner::new(driver))),
         }
     }
 }
