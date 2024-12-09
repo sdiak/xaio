@@ -1,4 +1,4 @@
-use super::{Sub, SubList};
+use super::{Request, RequestList};
 use bitflags::bitflags;
 use std::{pin::Pin, time::Duration};
 
@@ -7,11 +7,14 @@ pub trait Driver {
 
     fn config(&self) -> &DriverConfig;
 
-    fn wait(&mut self, timeout: Option<Duration>, ready_list: &mut SubList)
-        -> std::io::Result<i32>;
+    fn wait(
+        &mut self,
+        timeout: Option<Duration>,
+        ready_list: &mut RequestList,
+    ) -> std::io::Result<i32>;
 
-    fn submit(&mut self, sub: Pin<&mut Sub>) -> std::io::Result<()>;
-    fn cancel(&mut self, sub: Pin<&Sub>) -> std::io::Result<()>;
+    fn submit(&mut self, sub: Pin<&mut Request>) -> std::io::Result<()>;
+    fn cancel(&mut self, sub: Pin<&Request>) -> std::io::Result<()>;
 }
 
 bitflags! {

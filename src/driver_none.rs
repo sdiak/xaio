@@ -1,4 +1,4 @@
-use crate::{Driver, DriverConfig, Sub};
+use crate::{Driver, DriverConfig, Request};
 use std::io::{Error, ErrorKind, Result};
 
 #[derive(Debug)]
@@ -23,16 +23,16 @@ impl Driver for DriverNone {
     fn name(&self) -> &'static str {
         self.name
     }
-    fn submit(&mut self, _sub: std::pin::Pin<&mut Sub>) -> Result<()> {
+    fn submit(&mut self, _sub: std::pin::Pin<&mut Request>) -> Result<()> {
         Err(Error::from(ErrorKind::Unsupported))
     }
-    fn cancel(&mut self, _sub: std::pin::Pin<&Sub>) -> std::io::Result<()> {
+    fn cancel(&mut self, _sub: std::pin::Pin<&Request>) -> std::io::Result<()> {
         Err(Error::from(ErrorKind::NotFound))
     }
     fn wait(
         &mut self,
         _timeout: Option<std::time::Duration>,
-        _ready_list: &mut crate::SubList,
+        _ready_list: &mut crate::RequestList,
     ) -> std::io::Result<i32> {
         Err(Error::from(ErrorKind::Unsupported))
     }

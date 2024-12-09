@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use crate::{PhantomUnsend, PhantomUnsync, Sub};
+use crate::{PhantomUnsend, PhantomUnsync, Request};
 use std::io::{Error, ErrorKind, Result};
 
 pub(crate) struct RingInner {
@@ -15,7 +15,7 @@ pub struct Ring {
 
 #[repr(transparent)]
 pub struct Completion {
-    inner: Sub,
+    inner: Request,
 }
 
 impl Drop for Completion {
@@ -27,7 +27,7 @@ impl Drop for Completion {
 }
 
 impl Ring {
-    pub fn submit<'a, 'b>(&'a self, sub: &'b mut Sub) -> Result<&'b mut Completion> {
+    pub fn submit<'a, 'b>(&'a self, sub: &'b mut Request) -> Result<&'b mut Completion> {
         // todo!(); TODO:
         Ok(unsafe { std::mem::transmute(sub) })
     }

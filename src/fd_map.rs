@@ -2,7 +2,7 @@ use std::pin::Pin;
 
 use rustc_hash::FxHashMap;
 
-use crate::Sub;
+use crate::Request;
 
 // TODO: replace pin with addr
 
@@ -12,15 +12,15 @@ type Fd = libc::c_int;
 type Fd = libc::usize;
 
 pub(crate) struct FdMap<'a> {
-    readers: FxHashMap<Fd, Pin<&'a Sub>>,
-    writers: FxHashMap<Fd, Pin<&'a Sub>>,
+    readers: FxHashMap<Fd, Pin<&'a Request>>,
+    writers: FxHashMap<Fd, Pin<&'a Request>>,
 }
 
 impl<'a> FdMap<'a> {
     pub(crate) fn add_sequential_reader(
         &'a mut self,
         fd: Fd,
-        reader: Pin<&'a Sub>,
+        reader: Pin<&'a Request>,
     ) -> std::io::Result<()> {
         if self.readers.contains_key(&fd) {
             Err(std::io::Error::from(std::io::ErrorKind::ResourceBusy))
@@ -31,14 +31,14 @@ impl<'a> FdMap<'a> {
             Err(std::io::Error::from(std::io::ErrorKind::OutOfMemory))
         }
     }
-    pub(crate) fn remove_sequential_reader(&'a mut self, fd: Fd) -> Option<Pin<&'a Sub>> {
+    pub(crate) fn remove_sequential_reader(&'a mut self, fd: Fd) -> Option<Pin<&'a Request>> {
         self.readers.remove(&fd)
     }
 
     pub(crate) fn add_sequential_writer(
         &'a mut self,
         fd: Fd,
-        writer: Pin<&'a Sub>,
+        writer: Pin<&'a Request>,
     ) -> std::io::Result<()> {
         if self.writers.contains_key(&fd) {
             Err(std::io::Error::from(std::io::ErrorKind::ResourceBusy))
@@ -49,7 +49,7 @@ impl<'a> FdMap<'a> {
             Err(std::io::Error::from(std::io::ErrorKind::OutOfMemory))
         }
     }
-    pub(crate) fn remove_sequential_writer(&'a mut self, fd: Fd) -> Option<Pin<&'a Sub>> {
+    pub(crate) fn remove_sequential_writer(&'a mut self, fd: Fd) -> Option<Pin<&'a Request>> {
         self.writers.remove(&fd)
     }
 }

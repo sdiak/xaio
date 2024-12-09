@@ -1,5 +1,5 @@
 use crate::Driver;
-use crate::Sub;
+use crate::Request;
 use std::io::{Error, ErrorKind, Result};
 
 #[derive(Debug)]

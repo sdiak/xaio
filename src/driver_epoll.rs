@@ -1,4 +1,4 @@
-use crate::{saturating_opt_duration_to_timespec, Driver, DriverConfig, DriverFlags, Sub};
+use crate::{saturating_opt_duration_to_timespec, Driver, DriverConfig, DriverFlags, Request};
 use std::io::{Error, ErrorKind, Result};
 
 const BUFFER_SIZE: usize = 256usize;
@@ -75,16 +75,16 @@ impl Driver for DriverEPoll {
     fn name(&self) -> &'static str {
         "DriverEPoll"
     }
-    fn submit(&mut self, _sub: std::pin::Pin<&mut Sub>) -> Result<()> {
+    fn submit(&mut self, _sub: std::pin::Pin<&mut Request>) -> Result<()> {
         Err(Error::from(ErrorKind::Unsupported))
     }
-    fn cancel(&mut self, _sub: std::pin::Pin<&Sub>) -> std::io::Result<()> {
+    fn cancel(&mut self, _sub: std::pin::Pin<&Request>) -> std::io::Result<()> {
         Err(Error::from(ErrorKind::NotFound))
     }
     fn wait(
         &mut self,
         timeout: Option<std::time::Duration>,
-        _ready_list: &mut crate::SubList,
+        _ready_list: &mut crate::RequestList,
     ) -> std::io::Result<i32> {
         let mut ts_mem = libc::timespec {
             tv_nsec: 0 as _,
