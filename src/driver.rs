@@ -25,6 +25,8 @@ pub trait DriverIFace {
 
     fn submit(&mut self, sub: Pin<&mut Request>) -> std::io::Result<()>;
     fn cancel(&mut self, sub: Pin<&Request>) -> std::io::Result<()>;
+
+    fn wake(&self) -> std::io::Result<()>;
 }
 #[enum_dispatch(DriverIFace)]
 pub enum Driver {
@@ -32,9 +34,10 @@ pub enum Driver {
     // DriverURing,
     #[cfg(target_os = "linux")]
     DriverEPoll,
-    // TODO: DriverPoll
+    // TODO: DriverKQueue
     #[cfg(target_os = "windows")]
     DriverWindows,
+    // TODO: DriverPoll
 }
 
 pub struct DriverFactory {

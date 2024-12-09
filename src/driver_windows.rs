@@ -1,3 +1,4 @@
+use crate::driver_waker;
 use crate::{saturating_opt_duration_to_ms, DriverConfig, DriverFlags, DriverIFace, Request};
 use std::io::{Error, ErrorKind, Result};
 use windows_sys::Win32::Foundation::CloseHandle;
@@ -137,6 +138,21 @@ impl DriverIFace for DriverWindows {
                 windows_sys::Win32::Foundation::WAIT_TIMEOUT => Ok(0),
                 _ => Err(Error::from_raw_os_error(err as _)),
             }
+        }
+    }
+    fn wake(&self) -> Result<()> {
+        if unsafe {
+            PostQueuedCompletionStatus(
+                self.iocp,
+                0,
+                super::driver_windows::WAKE_TOKEN,
+                std::ptr::null_mut(),
+            )
+        } != 0
+        {
+            Ok(())
+        } else {
+            Err(Error::last_os_error())
         }
     }
 }

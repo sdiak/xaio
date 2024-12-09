@@ -36,4 +36,7 @@ impl DriverIFace for DriverNone {
     ) -> std::io::Result<i32> {
         Err(Error::from(ErrorKind::Unsupported))
     }
+    fn wake(&self) -> Result<()> {
+        Err(Error::from(ErrorKind::Unsupported))
+    }
 }
