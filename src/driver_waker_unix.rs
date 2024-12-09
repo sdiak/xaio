@@ -6,6 +6,7 @@ use std::{
     os::fd::FromRawFd,
 };
 
+#[derive(Debug)]
 pub(crate) struct DriverWaker {
     write_end: libc::c_int,
 }

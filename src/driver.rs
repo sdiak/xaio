@@ -1,5 +1,6 @@
 #[cfg(target_os = "linux")]
 use super::driver_epoll::DriverEPoll;
+use super::driver_none::DriverNone;
 #[cfg(target_os = "linux")]
 use super::driver_uring::DriverURing;
 #[cfg(target_os = "windows")]
@@ -38,6 +39,7 @@ pub enum Driver {
     #[cfg(target_os = "windows")]
     DriverWindows,
     // TODO: DriverPoll
+    DriverNone,
 }
 
 pub struct DriverFactory {

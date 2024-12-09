@@ -5,6 +5,7 @@ use std::io::{Error, ErrorKind, Result};
 pub struct DriverNone {
     name: &'static str,
     config: DriverConfig,
+    // TODO: create a pipe
 }
 
 impl Default for DriverNone {

@@ -1,4 +1,7 @@
-use crate::{saturating_opt_duration_to_timespec, DriverConfig, DriverFlags, DriverIFace, Request};
+use crate::{
+    driver_waker::DriverWaker, saturating_opt_duration_to_timespec, DriverConfig, DriverFlags,
+    DriverIFace, Request,
+};
 use std::io::{Error, ErrorKind, Result};
 
 const BUFFER_SIZE: usize = 256usize;
@@ -6,6 +9,7 @@ const BUFFER_SIZE: usize = 256usize;
 #[derive(Debug)]
 pub struct DriverEPoll {
     epollfd: libc::c_int,
+    waker: DriverWaker,
     config: DriverConfig,
     buffer: [libc::epoll_event; BUFFER_SIZE],
 }
@@ -40,6 +44,7 @@ impl DriverEPoll {
         }
         Ok(Self {
             epollfd: epollfd,
+            waker: DriverWaker::new(-1), // FIXME:
             config: real_config,
             buffer: unsafe { std::mem::MaybeUninit::zeroed().assume_init() },
         })
@@ -103,5 +108,8 @@ impl DriverIFace for DriverEPoll {
             return Err(Error::last_os_error());
         }
         Ok(self.process_events(n_events as usize))
+    }
+    fn wake(&self) -> std::io::Result<()> {
+        self.waker.wake()
     }
 }
