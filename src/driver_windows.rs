@@ -8,7 +8,7 @@ use windows_sys::Win32::System::IO::{
     CreateIoCompletionPort, GetQueuedCompletionStatusEx, PostQueuedCompletionStatus,
 };
 
-const WAKE_TOKEN: usize = 0usize;
+pub(crate) const WAKE_TOKEN: usize = 0usize;
 
 const BUFFER_SIZE: usize = 256usize;
 

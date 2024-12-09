@@ -19,6 +19,10 @@ pub use request_list::*;
 pub use ring::*;
 pub use socket::RawSocketFd;
 
+#[cfg_attr(not(target_os = "windows"), path = "driver_waker_unix.rs")]
+#[cfg_attr(target_os = "windows", path = "driver_waker_windows.rs")]
+mod driver_waker;
+
 pub type PhantomUnsync = std::marker::PhantomData<std::cell::Cell<()>>;
 pub type PhantomUnsend = std::marker::PhantomData<std::sync::MutexGuard<'static, ()>>;
 

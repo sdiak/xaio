@@ -1,3 +1,4 @@
+use super::driver_waker::DriverWaker;
 use super::{Request, RequestList};
 use bitflags::bitflags;
 use std::{pin::Pin, time::Duration};
