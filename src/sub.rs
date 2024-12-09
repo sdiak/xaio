@@ -1,11 +1,14 @@
-use std::{default, ptr, sync::atomic::Ordering};
+use std::{cell::RefCell, default, ptr, sync::atomic::Ordering};
+
+use crate::RingInner;
 
 pub(super) const PENDING: i32 = i32::MIN;
 
 #[repr(C)]
-#[derive(Debug)]
+// #[derive(Debug)]
 pub struct Sub {
     // prv__cp: *mut xcp_s,
+    pub(crate) owner: RefCell<RingInner>,
     status: i32,
     flags_and_op_code: u32,
     list_next: std::sync::atomic::AtomicUsize,

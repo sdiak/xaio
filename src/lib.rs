@@ -1,16 +1,23 @@
+mod buffer;
 mod capi;
 mod driver;
 mod driver_none;
+mod driver_uring;
 mod fd_map;
+mod ring;
 mod selector;
 mod socket;
 mod sub;
 mod sub_list;
 pub use driver::*;
 pub use driver_none::*;
+pub use ring::*;
 pub use socket::RawSocketFd;
 pub use sub::*;
 pub use sub_list::*;
+
+pub type PhantomUnsync = std::marker::PhantomData<std::cell::Cell<()>>;
+pub type PhantomUnsend = std::marker::PhantomData<std::sync::MutexGuard<'static, ()>>;
 
 #[cfg(target_os = "linux")]
 mod driver_epoll;
