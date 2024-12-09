@@ -5,9 +5,9 @@ pub(crate) struct DriverWaker {
     handle: HANDLE,
 }
 impl DriverWaker {
-    pub(crate) fn new(completion_queue_handle: HANDLE) -> Self {
+    pub(crate) fn new(driver_handle: HANDLE) -> Self {
         Self {
-            handle: completion_queue_handle,
+            handle: driver_handle,
         }
     }
     pub(crate) fn wake(&self) -> Result<()> {
@@ -25,4 +25,10 @@ impl DriverWaker {
             Err(Error::last_os_error())
         }
     }
+    #[inline]
+    pub(crate) fn read_end(&self) -> HANDLE {
+        self.handle
+    }
+    #[inline]
+    pub(crate) fn drain(&self) {}
 }

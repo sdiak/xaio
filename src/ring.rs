@@ -1,13 +1,16 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, marker::PhantomData, ptr::NonNull, rc::Rc, sync::atomic::AtomicU32};
 
 use crate::{
-    request_queue::RequestQueue, request_queue::RequestQueueParkScope, PhantomUnsend,
-    PhantomUnsync, ReadyList, Request,
+    driver_waker::DriverWaker,
+    request_queue::{RequestQueue, RequestQueueParkScope},
+    Driver, PhantomUnsend, PhantomUnsync, ReadyList, Request,
 };
 use std::io::{Error, ErrorKind, Result};
 
 pub(crate) struct RingInner {
-    ref_count: usize,
+    rc: u32,
+    arc: AtomicU32,
+    driver: Box<Driver>,
     concurrent: RequestQueue,
     ready: ReadyList,
     _unsync: PhantomUnsync,
@@ -15,7 +18,44 @@ pub(crate) struct RingInner {
 }
 
 pub struct Ring {
-    inner: RefCell<RingInner>,
+    inner: NonNull<RefCell<RingInner>>,
+    _phantom: PhantomData<RefCell<RingInner>>,
+}
+impl Clone for Ring {
+    fn clone(&self) -> Self {
+        {
+            let mut inner = unsafe { self.inner.as_ref() }.borrow_mut();
+            inner.rc = inner.rc.saturating_add(1);
+        }
+        Self {
+            inner: self.inner,
+            _phantom: PhantomData {},
+        }
+    }
+}
+impl Drop for Ring {
+    fn drop(&mut self) {
+        {
+            let mut inner = unsafe { self.inner.as_mut() }.borrow_mut();
+            let rc = inner.rc;
+            if rc > 1 {
+                inner.rc = rc - 1;
+                return;
+            }
+        }
+        unsafe {
+            let _drop = Box::from_raw(self.inner.as_ptr());
+        }
+    }
+}
+impl Ring {
+    pub fn new(driver: Box<Driver>) -> Self {
+        let boxed = Box::new(RefCell::new(RingInner::new(driver)));
+        Self {
+            inner: NonNull::new(Box::into_raw(boxed)).unwrap(), // SAFETY: unwrap is OK, the pointer is not null
+            _phantom: PhantomData {},
+        }
+    }
 }
 
 #[repr(transparent)]
@@ -39,9 +79,11 @@ impl Ring {
 }
 
 impl RingInner {
-    fn new() -> Self {
+    fn new(driver: Box<Driver>) -> Self {
         Self {
-            ref_count: 1,
+            rc: 1 as _,
+            arc: AtomicU32::new(0u32),
+            driver: driver,
             concurrent: RequestQueue::new(),
             ready: ReadyList::new(),
             _unsync: PhantomUnsync {},

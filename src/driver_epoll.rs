@@ -1,10 +1,11 @@
 use crate::{
-    driver_waker::DriverWaker, saturating_opt_duration_to_timespec, DriverConfig, DriverFlags,
-    DriverIFace, Request,
+    driver_waker::DriverWaker, libc_close_log_on_error, saturating_opt_duration_to_timespec,
+    DriverConfig, DriverFlags, DriverHandle, DriverIFace, Request,
 };
 use std::io::{Error, ErrorKind, Result};
 
 const BUFFER_SIZE: usize = 256usize;
+const DRIVER_NAME: &'static str = "DriverEPoll";
 
 #[derive(Debug)]
 pub struct DriverEPoll {
@@ -16,6 +17,7 @@ pub struct DriverEPoll {
 
 impl DriverEPoll {
     fn new(config: &DriverConfig) -> Result<Self> {
+        let waker = DriverWaker::new()?;
         let mut epollfd: libc::c_int = -1 as _;
         let mut real_config: DriverConfig =
             unsafe { std::mem::MaybeUninit::zeroed().assume_init() };
@@ -44,7 +46,7 @@ impl DriverEPoll {
         }
         Ok(Self {
             epollfd: epollfd,
-            waker: DriverWaker::new(-1), // FIXME:
+            waker: waker,
             config: real_config,
             buffer: unsafe { std::mem::MaybeUninit::zeroed().assume_init() },
         })
@@ -60,16 +62,7 @@ impl DriverEPoll {
 
 impl Drop for DriverEPoll {
     fn drop(&mut self) {
-        if self.epollfd >= 0 {
-            if unsafe { libc::close(self.epollfd) } < 0 {
-                log::warn!(
-                    "xepoll_close: failed closing the epoll file descriptor {}: {:?}",
-                    self.epollfd,
-                    std::io::Error::last_os_error()
-                );
-            }
-            self.epollfd = -1 as _;
-        }
+        libc_close_log_on_error(self.epollfd);
     }
 }
 
@@ -77,8 +70,9 @@ impl DriverIFace for DriverEPoll {
     fn config(&self) -> &DriverConfig {
         &self.config
     }
+    #[inline]
     fn name(&self) -> &'static str {
-        "DriverEPoll"
+        DRIVER_NAME
     }
     fn submit(&mut self, _sub: std::pin::Pin<&mut Request>) -> Result<()> {
         Err(Error::from(ErrorKind::Unsupported))
@@ -109,7 +103,12 @@ impl DriverIFace for DriverEPoll {
         }
         Ok(self.process_events(n_events as usize))
     }
+    #[inline]
     fn wake(&self) -> std::io::Result<()> {
         self.waker.wake()
+    }
+    #[inline]
+    fn get_native_handle(&self) -> DriverHandle {
+        self.epollfd
     }
 }

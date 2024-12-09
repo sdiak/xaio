@@ -1,4 +1,4 @@
-use crate::{DriverConfig, DriverIFace, Request};
+use crate::{DriverConfig, DriverHandle, DriverIFace, Request, AN_INVALID_DRIVER_HANDLE};
 use std::io::{Error, ErrorKind, Result};
 
 #[derive(Debug)]
@@ -39,5 +39,8 @@ impl DriverIFace for DriverNone {
     }
     fn wake(&self) -> Result<()> {
         Err(Error::from(ErrorKind::Unsupported))
+    }
+    fn get_native_handle(&self) -> DriverHandle {
+        AN_INVALID_DRIVER_HANDLE
     }
 }

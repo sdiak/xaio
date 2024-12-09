@@ -12,6 +12,16 @@ use bitflags::bitflags;
 use enum_dispatch::enum_dispatch;
 use std::{pin::Pin, time::Duration};
 
+#[cfg(not(target_family = "windows"))]
+pub type DriverHandle = libc::c_int;
+#[cfg(not(target_family = "windows"))]
+pub const AN_INVALID_DRIVER_HANDLE: DriverHandle = -1 as _;
+#[cfg(target_family = "windows")]
+pub type DriverHandle = windows_sys::Win32::Foundation::HANDLE;
+#[cfg(target_family = "windows")]
+pub const AN_INVALID_DRIVER_HANDLE: DriverHandle =
+    windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+
 #[enum_dispatch]
 pub trait DriverIFace {
     fn name(&self) -> &'static str;
@@ -28,7 +38,10 @@ pub trait DriverIFace {
     fn cancel(&mut self, sub: Pin<&Request>) -> std::io::Result<()>;
 
     fn wake(&self) -> std::io::Result<()>;
+
+    fn get_native_handle(&self) -> DriverHandle;
 }
+
 #[enum_dispatch(DriverIFace)]
 pub enum Driver {
     // #[cfg(target_os = "linux")]

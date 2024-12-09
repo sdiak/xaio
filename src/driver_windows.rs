@@ -17,6 +17,7 @@ const DRIVER_NAME: &'static str = "DriverWindows";
 
 pub struct DriverWindows {
     iocp: HANDLE,
+    waker: DriverWaker,
     config: DriverConfig,
     buffer: [OVERLAPPED_ENTRY; BUFFER_SIZE],
 }
@@ -53,6 +54,7 @@ impl DriverWindows {
         };
         Ok(Self {
             iocp,
+            waker: DriverWaker::new(iocp),
             config: real_config,
             buffer: unsafe { std::mem::MaybeUninit::zeroed().assume_init() },
         })
@@ -99,6 +101,7 @@ impl DriverIFace for DriverWindows {
     fn config(&self) -> &DriverConfig {
         &self.config
     }
+    #[inline]
     fn name(&self) -> &'static str {
         DRIVER_NAME
     }
@@ -140,19 +143,12 @@ impl DriverIFace for DriverWindows {
             }
         }
     }
+    #[inline]
     fn wake(&self) -> Result<()> {
-        if unsafe {
-            PostQueuedCompletionStatus(
-                self.iocp,
-                0,
-                super::driver_windows::WAKE_TOKEN,
-                std::ptr::null_mut(),
-            )
-        } != 0
-        {
-            Ok(())
-        } else {
-            Err(Error::last_os_error())
-        }
+        self.waker.wake()
+    }
+    #[inline]
+    fn get_native_handle(&self) -> DriverHandle {
+        self.iocp
     }
 }
