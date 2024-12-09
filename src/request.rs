@@ -44,9 +44,9 @@ impl Request {
     }
     #[inline]
     pub fn list_pop_next(&self, order: Ordering) -> *mut Request {
-        let old_head = (self.list_next.load(order) & !Request::IN_A_LIST_BIT) as *mut Request;
+        let old_next = (self.list_next.load(order) & !Request::IN_A_LIST_BIT) as *mut Request;
         self.list_next.store(0usize, Ordering::Relaxed);
-        old_head
+        old_next
     }
     /*
     pub fn set_status(self, status: i32) -> bool {

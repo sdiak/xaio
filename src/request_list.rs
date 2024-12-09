@@ -80,20 +80,18 @@ impl RequestList {
     /// O(n)
     unsafe fn push_back(&mut self, node: *mut Request) {
         debug_assert!(!node.is_null());
-        unsafe {
-            // Ensures in a single list at a given time
-            (*node).list_set_next(ptr::null_mut(), Ordering::Relaxed);
-            if self.head.is_null() {
-                self.head = node;
-            } else {
-                let mut prev: *mut Request = self.head;
-                let mut prev_next = (*prev).list_get_next(Ordering::Relaxed);
-                while !prev_next.is_null() {
-                    prev = prev_next as *mut Request;
-                    prev_next = (*prev).list_get_next(Ordering::Relaxed);
-                }
-                (*prev).list_set_next(node, Ordering::Relaxed);
+        // Ensures in a single list at a given time
+        (*node).list_set_next(ptr::null_mut(), Ordering::Relaxed);
+        if self.head.is_null() {
+            self.head = node;
+        } else {
+            let mut prev: *mut Request = self.head;
+            let mut prev_next = (*prev).list_get_next(Ordering::Relaxed);
+            while !prev_next.is_null() {
+                prev = prev_next as *mut Request;
+                prev_next = (*prev).list_get_next(Ordering::Relaxed);
             }
+            (*prev).list_update_next(node, Ordering::Relaxed);
         }
     }
     /// O(n)
@@ -113,9 +111,8 @@ impl RequestList {
                 prev_next = prev_next_next;
                 prev_next_next = unsafe { (*prev_next).list_get_next(Ordering::Relaxed) };
             }
-            unsafe {
-                (*prev).list_set_next(ptr::null_mut(), Ordering::Relaxed);
-            };
+            (*prev).list_update_next(ptr::null_mut(), Ordering::Relaxed);
+            (*prev_next).list_pop_next(Ordering::Relaxed);
             prev_next
         }
     }
