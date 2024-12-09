@@ -9,7 +9,7 @@ use std::io::{Error, ErrorKind, Result};
 
 pub(crate) struct RingInner {
     rc: u32,
-    arc: AtomicU32,
+    arc: AtomicU32, // TODO: prefer counting the wakers
     driver: Box<Driver>,
     concurrent: RequestQueue,
     ready: ReadyList,
@@ -18,42 +18,19 @@ pub(crate) struct RingInner {
 }
 
 pub struct Ring {
-    inner: NonNull<RefCell<RingInner>>,
-    _phantom: PhantomData<RefCell<RingInner>>,
-}
-impl Clone for Ring {
-    fn clone(&self) -> Self {
-        {
-            let mut inner = unsafe { self.inner.as_ref() }.borrow_mut();
-            inner.rc = inner.rc.saturating_add(1);
-        }
-        Self {
-            inner: self.inner,
-            _phantom: PhantomData {},
-        }
-    }
+    inner: Box<RingInner>,
 }
 impl Drop for Ring {
     fn drop(&mut self) {
-        {
-            let mut inner = unsafe { self.inner.as_mut() }.borrow_mut();
-            let rc = inner.rc;
-            if rc > 1 {
-                inner.rc = rc - 1;
-                return;
-            }
-        }
-        unsafe {
-            let _drop = Box::from_raw(self.inner.as_ptr());
+        if self.inner.rc > 1 || self.inner.arc.load(std::sync::atomic::Ordering::Relaxed) != 0 {
+            log::warn!("Need to cancel everything and wait"); // TODO:
         }
     }
 }
 impl Ring {
     pub fn new(driver: Box<Driver>) -> Self {
-        let boxed = Box::new(RefCell::new(RingInner::new(driver)));
         Self {
-            inner: NonNull::new(Box::into_raw(boxed)).unwrap(), // SAFETY: unwrap is OK, the pointer is not null
-            _phantom: PhantomData {},
+            inner: Box::new(RingInner::new(driver)),
         }
     }
 }
