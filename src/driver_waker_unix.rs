@@ -1,17 +1,17 @@
+use super::selector::rawpoll;
+use log::warn;
 use std::{
     fs::File,
     io::{ErrorKind, Result, Write},
-    os::windows::io::FromRawHandle,
+    os::fd::FromRawFd,
 };
-
-use log::warn;
 
 pub(crate) struct DriverWaker {
     write_end: libc::c_int,
 }
 
 fn write_all(fd: libc::c_int, buf: &[u8], block_on_eagain: bool) -> Result<usize> {
-    let mut file = unsafe { File::from_raw_handle(std::ptr::null_mut()) }; // File::from_raw_fd(fd);
+    let mut file = unsafe { File::from_raw_fd(fd) };
     let mut done = 0;
     let todo = buf.len();
     while done < todo {
@@ -22,8 +22,12 @@ fn write_all(fd: libc::c_int, buf: &[u8], block_on_eagain: bool) -> Result<usize
             Err(e) => match e.kind() {
                 ErrorKind::WouldBlock => {
                     if block_on_eagain {
-                        let mut pollfd = &[rawpoll::PollFD {}];
-                        super::rawpoll::poll(pollfd)?;
+                        let pollfd = &mut [rawpoll::PollFD {
+                            fd: fd,
+                            events: rawpoll::POLLIN,
+                            revents: 0 as _,
+                        }];
+                        rawpoll::sys_poll(pollfd, 5000)?;
                     } else {
                         return Err(e);
                     }

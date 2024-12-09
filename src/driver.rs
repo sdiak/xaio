@@ -1,9 +1,18 @@
+#[cfg(target_os = "linux")]
+use super::driver_epoll::DriverEPoll;
+#[cfg(target_os = "linux")]
+use super::driver_uring::DriverURing;
+#[cfg(target_os = "windows")]
+use super::driver_windows::DriverWindows;
+
 use super::driver_waker::DriverWaker;
 use super::{Request, RequestList};
 use bitflags::bitflags;
+use enum_dispatch::enum_dispatch;
 use std::{pin::Pin, time::Duration};
 
-pub trait Driver {
+#[enum_dispatch]
+pub trait DriverIFace {
     fn name(&self) -> &'static str;
 
     fn config(&self) -> &DriverConfig;
@@ -16,6 +25,20 @@ pub trait Driver {
 
     fn submit(&mut self, sub: Pin<&mut Request>) -> std::io::Result<()>;
     fn cancel(&mut self, sub: Pin<&Request>) -> std::io::Result<()>;
+}
+#[enum_dispatch(DriverIFace)]
+pub enum Driver {
+    // #[cfg(target_os = "linux")]
+    // DriverURing,
+    #[cfg(target_os = "linux")]
+    DriverEPoll,
+    // TODO: DriverPoll
+    #[cfg(target_os = "windows")]
+    DriverWindows,
+}
+
+pub struct DriverFactory {
+    // new: Fn(&DriverConfig) -> Result<(Driver, )>
 }
 
 bitflags! {

@@ -1,4 +1,4 @@
-use crate::Driver;
+use crate::DriverIFace;
 use crate::Request;
 use std::io::{Error, ErrorKind, Result};
 

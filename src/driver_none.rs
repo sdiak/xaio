@@ -1,4 +1,4 @@
-use crate::{Driver, DriverConfig, Request};
+use crate::{DriverConfig, DriverIFace, Request};
 use std::io::{Error, ErrorKind, Result};
 
 #[derive(Debug)]
@@ -16,7 +16,7 @@ impl Default for DriverNone {
     }
 }
 
-impl Driver for DriverNone {
+impl DriverIFace for DriverNone {
     fn config(&self) -> &DriverConfig {
         &self.config
     }

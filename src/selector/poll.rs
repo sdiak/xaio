@@ -10,7 +10,7 @@ use crate::RawSocketFd;
 
 #[cfg_attr(not(target_os = "windows"), path = "rawpoll_unix.rs")]
 #[cfg_attr(target_os = "windows", path = "rawpoll_windows.rs")]
-mod rawpoll;
+pub(crate) mod rawpoll;
 
 pub use rawpoll::{POLLERR, POLLHUP, POLLIN, POLLOUT, POLLPRI};
 

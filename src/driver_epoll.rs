@@ -1,4 +1,4 @@
-use crate::{saturating_opt_duration_to_timespec, Driver, DriverConfig, DriverFlags, Request};
+use crate::{saturating_opt_duration_to_timespec, DriverConfig, DriverFlags, DriverIFace, Request};
 use std::io::{Error, ErrorKind, Result};
 
 const BUFFER_SIZE: usize = 256usize;
@@ -68,7 +68,7 @@ impl Drop for DriverEPoll {
     }
 }
 
-impl Driver for DriverEPoll {
+impl DriverIFace for DriverEPoll {
     fn config(&self) -> &DriverConfig {
         &self.config
     }

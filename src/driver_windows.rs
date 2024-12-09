@@ -1,4 +1,4 @@
-use crate::{saturating_opt_duration_to_ms, Driver, DriverConfig, DriverFlags, Request};
+use crate::{saturating_opt_duration_to_ms, DriverConfig, DriverFlags, DriverIFace, Request};
 use std::io::{Error, ErrorKind, Result};
 use windows_sys::Win32::Foundation::CloseHandle;
 use windows_sys::Win32::Foundation::HANDLE;
@@ -94,7 +94,7 @@ impl Drop for DriverWindows {
     }
 }
 
-impl Driver for DriverWindows {
+impl DriverIFace for DriverWindows {
     fn config(&self) -> &DriverConfig {
         &self.config
     }
