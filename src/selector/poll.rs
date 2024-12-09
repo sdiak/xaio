@@ -38,7 +38,7 @@ fn interests_to_events(interests: Interest) -> libc::c_short {
     }
     events
 }
-
+/*
 impl Inner {
     fn try_reserve(&mut self, additional: usize) -> std::io::Result<()> {
         if self.poll_fds.try_reserve(additional).is_err()
@@ -177,3 +177,4 @@ impl SelectorImpl for Poll {
             .select(events, timeout)
     }
 }
+ */

@@ -20,7 +20,7 @@ impl RawSocketFd {
     }
     #[cfg(target_os = "windows")]
     pub fn invalid() -> Self {
-        Self { inner: winapi::um::winsock2::INVALID_SOCKET as Inner }
+        Self { inner: windows_sys::Win32::Networking::WinSock::INVALID_SOCKET as _ }
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -29,6 +29,6 @@ impl RawSocketFd {
     }
     #[cfg(target_os = "windows")]
     pub fn is_valid(&self) -> bool {
-        self.inner != (winapi::um::winsock2::INVALID_SOCKET as Inner)
+        self.inner != (windows_sys::Win32::Networking::WinSock::INVALID_SOCKET as _)
     }
 }

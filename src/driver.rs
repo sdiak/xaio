@@ -29,18 +29,19 @@ bitflags! {
 #[derive(Debug, Copy, Clone)]
 pub struct DriverConfig {
     /// submission queue depth
-    pub submission_queue_depth: i32,
+    pub submission_queue_depth: u32,
     /// completion queue depth
-    pub completion_queue_depth: i32,
-    /// kernel busy-polling loop timeout in milliseconds, a value of <= 0 deactivate kernel polling
-    pub kernel_poll_timeout_ms: i32,
+    pub completion_queue_depth: u32,
+    /// kernel busy-polling loop timeout in milliseconds, or 0 to deactivate kernel polling
+    pub kernel_poll_timeout_ms: u32,
     /// Flags
     pub flags: u32,
     /// A sharable driver handle when (flags & DriverFlags::ATTACH_HANDLE)
     pub attach_handle: usize,
     /// An hint on the maximal number of file descriptor
-    pub max_number_of_fd_hint: i32,
-    pub reserved_: i32,
+    pub max_number_of_fd_hint: u32,
+    /// An hint on the maximum number of io threads (Kernel or Userspace) or 0 for defaults
+    pub max_number_of_threads: u32,
 }
 
 impl Default for DriverConfig {
@@ -52,7 +53,7 @@ impl Default for DriverConfig {
             flags: DriverFlags::CLOSE_ON_EXEC.bits(),
             attach_handle: usize::MAX,
             max_number_of_fd_hint: 256,
-            reserved_: 0,
+            max_number_of_threads: 0,
         }
     }
 }

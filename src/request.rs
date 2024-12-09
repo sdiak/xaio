@@ -7,6 +7,8 @@ pub(super) const PENDING: i32 = i32::MIN;
 #[repr(C)]
 // #[derive(Debug)]
 pub struct Request {
+    #[cfg(target_os = "windows")]
+    win_header: windows_sys::Win32::System::IO::OVERLAPPED,
     // prv__cp: *mut xcp_s,
     pub(crate) owner: RefCell<RingInner>,
     status: i32,

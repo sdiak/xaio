@@ -9,7 +9,7 @@ use crate::Request;
 #[cfg(not(target_os = "windows"))]
 type Fd = libc::c_int;
 #[cfg(target_os = "windows")]
-type Fd = libc::usize;
+type Fd = usize;
 
 pub(crate) struct FdMap<'a> {
     readers: FxHashMap<Fd, Pin<&'a Request>>,

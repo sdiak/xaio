@@ -4,13 +4,16 @@ mod driver;
 mod driver_none;
 mod driver_uring;
 mod fd_map;
+mod ready_list;
 mod request;
 mod request_list;
+mod request_queue;
 mod ring;
 mod selector;
 mod socket;
 pub use driver::*;
 pub use driver_none::*;
+pub use ready_list::*;
 pub use request::*;
 pub use request_list::*;
 pub use ring::*;
@@ -21,6 +24,9 @@ pub type PhantomUnsend = std::marker::PhantomData<std::sync::MutexGuard<'static,
 
 #[cfg(target_os = "linux")]
 mod driver_epoll;
+
+#[cfg(target_os = "windows")]
+mod driver_windows;
 
 #[cfg(not(target_os = "windows"))]
 pub(crate) unsafe fn saturating_duration_to_timespec(
