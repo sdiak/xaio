@@ -2,8 +2,12 @@ use super::selector::rawpoll;
 use std::{
     fs::File,
     io::{Error, ErrorKind, Read, Result, Write},
-    os::fd::FromRawFd,
 };
+
+#[cfg(target_family = "unix")]
+use std::os::fd::FromRawFd;
+#[cfg(target_family = "windows")]
+use std::os::windows::io::FromRawHandle;
 
 #[allow(dead_code)]
 pub(crate) fn libc_close_log_on_error(fd: libc::c_int) {
@@ -16,6 +20,7 @@ pub(crate) fn libc_close_log_on_error(fd: libc::c_int) {
     }
 }
 
+#[cfg(target_family = "unix")]
 #[allow(dead_code)]
 pub(crate) fn libc_read_all(fd: libc::c_int, buf: &mut [u8], block_on_eagain: bool) -> Result<()> {
     let mut file = unsafe { File::from_raw_fd(fd) };
@@ -49,6 +54,7 @@ pub(crate) fn libc_read_all(fd: libc::c_int, buf: &mut [u8], block_on_eagain: bo
     Ok(())
 }
 
+#[cfg(target_family = "unix")]
 #[allow(dead_code)]
 pub(crate) fn libc_write_all(fd: libc::c_int, buf: &[u8], block_on_eagain: bool) -> Result<()> {
     let mut file = unsafe { File::from_raw_fd(fd) };

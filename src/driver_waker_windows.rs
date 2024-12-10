@@ -15,7 +15,7 @@ impl DriverWaker {
             PostQueuedCompletionStatus(
                 self.handle,
                 0,
-                super::driver_windows::WAKE_TOKEN,
+                super::driver_iocp_windows::WAKE_TOKEN,
                 std::ptr::null_mut(),
             )
         } != 0

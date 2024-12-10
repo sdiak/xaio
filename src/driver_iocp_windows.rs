@@ -1,5 +1,7 @@
-use crate::driver_waker;
-use crate::{saturating_opt_duration_to_ms, DriverConfig, DriverFlags, DriverIFace, Request};
+use crate::driver_waker::{self, DriverWaker};
+use crate::{
+    saturating_opt_duration_to_ms, DriverConfig, DriverFlags, DriverHandle, DriverIFace, Request,
+};
 use std::io::{Error, ErrorKind, Result};
 use windows_sys::Win32::Foundation::CloseHandle;
 use windows_sys::Win32::Foundation::HANDLE;
@@ -22,7 +24,7 @@ pub struct DriverIOCP {
     buffer: [OVERLAPPED_ENTRY; BUFFER_SIZE],
 }
 impl DriverIOCP {
-    fn new(config: &DriverConfig) -> Result<Self> {
+    pub(crate) fn new(config: &DriverConfig) -> Result<Self> {
         let mut real_config: DriverConfig =
             unsafe { std::mem::MaybeUninit::zeroed().assume_init() };
         real_config.flags = config.flags & (DriverFlags::ATTACH_HANDLE).bits();

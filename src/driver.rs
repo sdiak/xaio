@@ -1,10 +1,10 @@
 #[cfg(target_os = "linux")]
 use super::driver_epoll::DriverEPoll;
+#[cfg(target_os = "windows")]
+use super::driver_iocp_windows::DriverIOCP;
 use super::driver_none::DriverNone;
 #[cfg(target_os = "linux")]
 use super::driver_uring::DriverURing;
-#[cfg(target_os = "windows")]
-use super::driver_windows::DriverWindows;
 
 use super::driver_waker::DriverWaker;
 use super::{Request, RequestList};
@@ -48,7 +48,7 @@ pub enum Driver {
     DriverEPoll,
     // TODO: DriverKQueue
     #[cfg(target_os = "windows")]
-    DriverWindows,
+    DriverIOCP,
     // TODO: DriverPoll
     DriverNone,
 }
@@ -77,16 +77,19 @@ impl DriverKind {
 }
 
 impl Driver {
-    pub fn new(kind: DriverKind, config: &DriverConfig) -> Result<Self> {
+    pub fn new(kind: DriverKind, config: &DriverConfig) -> Result<Box<Self>> {
         match kind {
-            //DriverKind::URing => Ok(Driver::from(DriverURing::new(config)?)),
+            //DriverKind::URing => Ok(Box::new(Driver::from(DriverURing::new(config)?))),
             #[cfg(target_os = "linux")]
-            DriverKind::EPoll => Ok(Driver::from(DriverEPoll::new(config)?)),
-            //DriverKind::KQueue => Ok(Driver::from(DriverKQueue::new(config)?)),
+            DriverKind::EPoll => Ok(Box::new(Driver::from(DriverEPoll::new(config)?))),
+            //DriverKind::KQueue => Ok(Box::new(Driver::from(DriverKQueue::new(config)?))),
             #[cfg(target_os = "windows")]
-            DriverKind::IOCP => Ok(Driver::from(DriverIOCP::new(config)?)),
-            // DriverKind::Poll => Ok(Driver::from(DriverPoll::new(config)?)),
-            _ => Ok(Driver::from(DriverNone::new(config, Some(kind.name()))?)),
+            DriverKind::IOCP => Ok(Box::new(Driver::from(DriverIOCP::new(config)?))),
+            // DriverKind::Poll => Ok(Box::new(Driver::from(DriverPoll::new(config)?))),
+            _ => Ok(Box::new(Driver::from(DriverNone::new(
+                config,
+                Some(kind.name()),
+            )?))),
         }
     }
 }
