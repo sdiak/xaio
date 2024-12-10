@@ -13,15 +13,15 @@ pub(crate) const WAKE_TOKEN: usize = 0usize;
 
 const BUFFER_SIZE: usize = 256usize;
 
-const DRIVER_NAME: &'static str = "DriverWindows";
+const DRIVER_NAME: &'static str = "IOCP";
 
-pub struct DriverWindows {
+pub struct DriverIOCP {
     iocp: HANDLE,
     waker: DriverWaker,
     config: DriverConfig,
     buffer: [OVERLAPPED_ENTRY; BUFFER_SIZE],
 }
-impl DriverWindows {
+impl DriverIOCP {
     fn new(config: &DriverConfig) -> Result<Self> {
         let mut real_config: DriverConfig =
             unsafe { std::mem::MaybeUninit::zeroed().assume_init() };
@@ -82,12 +82,12 @@ impl DriverWindows {
     }
 }
 
-impl Drop for DriverWindows {
+impl Drop for DriverIOCP {
     fn drop(&mut self) {
         if self.iocp != INVALID_HANDLE_VALUE {
             if unsafe { CloseHandle(self.iocp) } == 0 {
                 log::warn!(
-                    "DriverWindows::drop(): failed closing the Iocp handle {:?}: {:?}",
+                    "DriverIOCP::drop(): failed closing the Iocp handle {:?}: {:?}",
                     self.iocp,
                     std::io::Error::last_os_error()
                 );
@@ -97,7 +97,7 @@ impl Drop for DriverWindows {
     }
 }
 
-impl DriverIFace for DriverWindows {
+impl DriverIFace for DriverIOCP {
     fn config(&self) -> &DriverConfig {
         &self.config
     }

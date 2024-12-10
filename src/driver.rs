@@ -12,6 +12,8 @@ use bitflags::bitflags;
 use enum_dispatch::enum_dispatch;
 use std::{pin::Pin, time::Duration};
 
+use std::io::Result;
+
 #[cfg(not(target_family = "windows"))]
 pub type DriverHandle = libc::c_int;
 #[cfg(not(target_family = "windows"))]
@@ -28,16 +30,12 @@ pub trait DriverIFace {
 
     fn config(&self) -> &DriverConfig;
 
-    fn wait(
-        &mut self,
-        timeout: Option<Duration>,
-        ready_list: &mut RequestList,
-    ) -> std::io::Result<i32>;
+    fn wait(&mut self, timeout: Option<Duration>, ready_list: &mut RequestList) -> Result<i32>;
 
-    fn submit(&mut self, sub: Pin<&mut Request>) -> std::io::Result<()>;
-    fn cancel(&mut self, sub: Pin<&Request>) -> std::io::Result<()>;
+    fn submit(&mut self, sub: Pin<&mut Request>) -> Result<()>;
+    fn cancel(&mut self, sub: Pin<&Request>) -> Result<()>;
 
-    fn wake(&self) -> std::io::Result<()>;
+    fn wake(&self) -> Result<()>;
 
     fn get_native_handle(&self) -> DriverHandle;
 }
@@ -55,8 +53,42 @@ pub enum Driver {
     DriverNone,
 }
 
-pub struct DriverFactory {
-    // new: Fn(&DriverConfig) -> Result<(Driver, )>
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub enum DriverKind {
+    URing,
+    EPoll,
+    KQueue,
+    IOCP,
+    Poll,
+    None,
+}
+impl DriverKind {
+    pub fn name(&self) -> &'static str {
+        match self {
+            DriverKind::URing => "URing",
+            DriverKind::EPoll => "EPoll",
+            DriverKind::KQueue => "KQueue",
+            DriverKind::IOCP => "IOCP",
+            DriverKind::Poll => "Poll",
+            DriverKind::None => "None",
+        }
+    }
+}
+
+impl Driver {
+    pub fn new(kind: DriverKind, config: &DriverConfig) -> Result<Self> {
+        match kind {
+            //DriverKind::URing => Ok(Driver::from(DriverURing::new(config)?)),
+            #[cfg(target_os = "linux")]
+            DriverKind::EPoll => Ok(Driver::from(DriverEPoll::new(config)?)),
+            //DriverKind::KQueue => Ok(Driver::from(DriverKQueue::new(config)?)),
+            #[cfg(target_os = "windows")]
+            DriverKind::IOCP => Ok(Driver::from(DriverIOCP::new(config)?)),
+            // DriverKind::Poll => Ok(Driver::from(DriverPoll::new(config)?)),
+            _ => Ok(Driver::from(DriverNone::new(config, Some(kind.name()))?)),
+        }
+    }
 }
 
 bitflags! {

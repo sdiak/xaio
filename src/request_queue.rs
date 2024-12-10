@@ -47,10 +47,9 @@ impl<'scope> RequestQueueParkScope<'scope> {
 impl<'scope> Drop for RequestQueueParkScope<'scope> {
     fn drop(&mut self) {
         if self.parked {
-            let mut tail: *mut Request =
-                (self.queue.tail.swap(0, Ordering::Acquire) & !PARK_BIT) as _;
+            let tail: *mut Request = (self.queue.tail.swap(0, Ordering::Acquire) & !PARK_BIT) as _;
             if !tail.is_null() {
-                self.ready.transfert_from(&mut reverse_list(tail));
+                self.ready.push_back_all(&mut reverse_list(tail));
             }
         }
     }

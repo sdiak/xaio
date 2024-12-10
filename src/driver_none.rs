@@ -1,5 +1,9 @@
-use crate::{DriverConfig, DriverHandle, DriverIFace, Request, AN_INVALID_DRIVER_HANDLE};
+use crate::{
+    DriverConfig, DriverFlags, DriverHandle, DriverIFace, Request, AN_INVALID_DRIVER_HANDLE,
+};
 use std::io::{Error, ErrorKind, Result};
+
+const DRIVER_NAME: &'static str = "None";
 
 #[derive(Debug)]
 pub struct DriverNone {
@@ -11,12 +15,25 @@ pub struct DriverNone {
 impl Default for DriverNone {
     fn default() -> Self {
         Self {
-            name: "DriverNone",
+            name: DRIVER_NAME,
             config: DriverConfig::default(),
         }
     }
 }
 
+impl DriverNone {
+    pub fn new(config: &DriverConfig, name: Option<&'static str>) -> Result<Self> {
+        let mut real_config: DriverConfig =
+            unsafe { std::mem::MaybeUninit::zeroed().assume_init() };
+        real_config.max_number_of_fd_hint = num::clamp(config.max_number_of_fd_hint, 1, 1000000);
+        real_config.flags = DriverFlags::CLOSE_ON_EXEC.bits();
+        let name = name.unwrap_or(DRIVER_NAME);
+        Ok(DriverNone {
+            name: name,
+            config: real_config,
+        })
+    }
+}
 impl DriverIFace for DriverNone {
     fn config(&self) -> &DriverConfig {
         &self.config

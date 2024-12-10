@@ -10,7 +10,7 @@ pub struct Request {
     #[cfg(target_os = "windows")]
     win_header: windows_sys::Win32::System::IO::OVERLAPPED,
     // prv__cp: *mut xcp_s,
-    pub(crate) owner: RefCell<RingInner>,
+    pub(crate) owner: Option<RefCell<RingInner>>,
     status: i32,
     flags_and_op_code: u32,
     list_next: std::sync::atomic::AtomicUsize,

@@ -36,7 +36,7 @@ impl ReadyList {
         self.len += 1;
     }
 
-    pub fn transfert_from(&mut self, other: &mut ReadyList) -> usize {
+    pub fn push_back_all(&mut self, other: &mut ReadyList) -> usize {
         if self.tail.is_null() {
             self.head = other.head;
         } else {

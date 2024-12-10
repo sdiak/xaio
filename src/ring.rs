@@ -43,7 +43,7 @@ pub struct Completion {
 
 impl Drop for Completion {
     fn drop(&mut self) {
-        let ring = self.inner.owner.borrow_mut();
+        // let _ring = self.inner.owner.borrow_mut();
 
         // if let Some(&mut ring) = self.inner.owner {}
     }
@@ -68,7 +68,7 @@ impl RingInner {
             _unsend: PhantomUnsend {},
         }
     }
-    fn cancel(sub: &Completion) {}
+    fn cancel(_sub: &Completion) {}
     pub fn wait(&mut self) {
         let need_park: bool = false;
         if need_park {

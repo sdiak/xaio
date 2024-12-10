@@ -5,6 +5,7 @@ use std::{
     os::fd::FromRawFd,
 };
 
+#[allow(dead_code)]
 pub(crate) fn libc_close_log_on_error(fd: libc::c_int) {
     if fd >= 0 && unsafe { libc::close(fd) } < 0 {
         log::warn!(
@@ -15,6 +16,7 @@ pub(crate) fn libc_close_log_on_error(fd: libc::c_int) {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn libc_read_all(fd: libc::c_int, buf: &mut [u8], block_on_eagain: bool) -> Result<()> {
     let mut file = unsafe { File::from_raw_fd(fd) };
     let mut done = 0;
@@ -47,6 +49,7 @@ pub(crate) fn libc_read_all(fd: libc::c_int, buf: &mut [u8], block_on_eagain: bo
     Ok(())
 }
 
+#[allow(dead_code)]
 pub(crate) fn libc_write_all(fd: libc::c_int, buf: &[u8], block_on_eagain: bool) -> Result<()> {
     let mut file = unsafe { File::from_raw_fd(fd) };
     let mut done = 0;
@@ -80,6 +83,7 @@ pub(crate) fn libc_write_all(fd: libc::c_int, buf: &[u8], block_on_eagain: bool)
 }
 
 #[cfg(target_family = "unix")]
+#[allow(dead_code)]
 pub(crate) fn libc_configure_fd(
     fd: libc::c_int,
     non_blocking: bool,
@@ -113,6 +117,7 @@ pub(crate) fn libc_configure_fd(
 }
 
 #[cfg(target_os = "linux")]
+#[allow(dead_code)]
 pub(crate) fn libc_pipe2(
     non_blocking: bool,
     close_on_exec: bool,
@@ -133,6 +138,7 @@ pub(crate) fn libc_pipe2(
 }
 
 #[cfg(all(not(target_os = "linux"), target_family = "unix"))]
+#[allow(dead_code)]
 pub(crate) fn libc_pipe2(
     non_blocking: bool,
     close_on_exec: bool,

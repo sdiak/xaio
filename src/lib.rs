@@ -40,7 +40,7 @@ pub type PhantomUnsend = std::marker::PhantomData<std::sync::MutexGuard<'static,
 mod driver_epoll;
 
 #[cfg(target_os = "windows")]
-mod driver_windows;
+mod driver_iocp_windows;
 
 #[cfg(not(target_os = "windows"))]
 pub(crate) unsafe fn saturating_duration_to_timespec(

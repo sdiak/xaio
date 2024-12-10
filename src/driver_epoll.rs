@@ -5,7 +5,7 @@ use crate::{
 use std::io::{Error, ErrorKind, Result};
 
 const BUFFER_SIZE: usize = 256usize;
-const DRIVER_NAME: &'static str = "DriverEPoll";
+const DRIVER_NAME: &'static str = "EPoll";
 
 #[derive(Debug)]
 pub struct DriverEPoll {
@@ -16,34 +16,36 @@ pub struct DriverEPoll {
 }
 
 impl DriverEPoll {
-    fn new(config: &DriverConfig) -> Result<Self> {
+    pub(crate) fn new(config: &DriverConfig) -> Result<Self> {
         let waker = DriverWaker::new()?;
-        let mut epollfd: libc::c_int = -1 as _;
         let mut real_config: DriverConfig =
             unsafe { std::mem::MaybeUninit::zeroed().assume_init() };
         real_config.flags =
             config.flags & (DriverFlags::ATTACH_HANDLE | DriverFlags::CLOSE_ON_EXEC).bits();
         real_config.attach_handle = -1i32 as usize;
         real_config.max_number_of_fd_hint = num::clamp(config.max_number_of_fd_hint, 1, 1000000);
-        if (real_config.flags & DriverFlags::ATTACH_HANDLE.bits()) != 0u32 {
-            epollfd = config.attach_handle as _;
-            if epollfd <= 0 {
-                return Err(Error::from(ErrorKind::InvalidInput));
-            }
-        } else {
-            epollfd = unsafe {
-                libc::epoll_create1(
-                    if (real_config.flags & DriverFlags::CLOSE_ON_EXEC.bits()) != 0 {
-                        libc::EPOLL_CLOEXEC
-                    } else {
-                        0
-                    },
-                )
+        let epollfd: libc::c_int =
+            if (real_config.flags & DriverFlags::ATTACH_HANDLE.bits()) != 0u32 {
+                let epollfd = config.attach_handle as _;
+                if epollfd <= 0 {
+                    return Err(Error::from(ErrorKind::InvalidInput));
+                }
+                epollfd
+            } else {
+                let epollfd = unsafe {
+                    libc::epoll_create1(
+                        if (real_config.flags & DriverFlags::CLOSE_ON_EXEC.bits()) != 0 {
+                            libc::EPOLL_CLOEXEC
+                        } else {
+                            0
+                        },
+                    )
+                };
+                if epollfd < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                epollfd
             };
-            if epollfd < 0 {
-                return Err(std::io::Error::last_os_error());
-            }
-        }
         Ok(Self {
             epollfd: epollfd,
             waker: waker,
@@ -54,6 +56,7 @@ impl DriverEPoll {
     fn process_events(&mut self, nevents: usize) -> i32 {
         let mut nuser_events = 0i32;
         for i in 0usize..nevents {
+            nuser_events += i as i32; // FIXME:
             todo!();
         }
         nuser_events
