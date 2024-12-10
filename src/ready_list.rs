@@ -1,6 +1,6 @@
 use std::sync::atomic::Ordering;
 
-use crate::Request;
+use crate::{request, Request};
 
 pub struct ReadyList {
     pub(crate) head: *mut Request,
@@ -27,7 +27,7 @@ impl ReadyList {
     }
 
     pub(crate) unsafe fn push_back(&mut self, new_tail: *mut Request) {
-        debug_assert!(!new_tail.is_null());
+        assert!(!new_tail.is_null() && (*new_tail).status != request::PENDING);
         (*new_tail).list_set_next(self.tail, Ordering::Relaxed);
         if self.tail.is_null() {
             self.head = new_tail;

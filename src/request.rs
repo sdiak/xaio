@@ -3,6 +3,7 @@ use std::{cell::RefCell, default, ptr, sync::atomic::Ordering};
 use crate::RingInner;
 
 pub(super) const PENDING: i32 = i32::MIN;
+pub(super) const UNKNOWN: i32 = i32::MIN + 1;
 
 #[repr(C)]
 // #[derive(Debug)]
@@ -11,7 +12,10 @@ pub struct Request {
     win_header: windows_sys::Win32::System::IO::OVERLAPPED,
     // prv__cp: *mut xcp_s,
     pub(crate) owner: Option<RefCell<RingInner>>,
-    status: i32,
+    // request status
+    pub(crate) status: i32,
+    // reques status set by a concurrent thread
+    pub(crate) concurrent_status: std::sync::atomic::AtomicI32,
     flags_and_op_code: u32,
     list_next: std::sync::atomic::AtomicUsize,
 }

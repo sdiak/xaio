@@ -1,7 +1,7 @@
 use std::sync::atomic::AtomicUsize;
 use std::{ptr, sync::atomic::Ordering};
 
-use crate::{ReadyList, Request};
+use crate::{request, ReadyList, Request, PENDING, UNKNOWN};
 
 const PARK_BIT: usize = 1usize;
 
@@ -62,6 +62,10 @@ fn reverse_list(old_head: *mut Request) -> ReadyList {
     let mut prev = std::ptr::null_mut::<Request>();
     while !head.is_null() {
         len += 1;
+        unsafe {
+            // SAFETY: called from owner thread
+            (*head).status = (*head).concurrent_status.load(Ordering::Relaxed);
+        }
         let next = unsafe { (*head).list_get_next(Ordering::Relaxed) };
         unsafe { (*head).list_update_next(prev, Ordering::Relaxed) };
         prev = head;
@@ -82,7 +86,9 @@ impl RequestQueue {
     /// # Arguments
     ///   - `req` The completed request.
     pub(crate) unsafe fn push(&mut self, req: *mut Request) {
-        debug_assert!(!req.is_null());
+        assert!(
+            !req.is_null() && (*req).concurrent_status.load(Ordering::Relaxed) != request::PENDING
+        );
         // Ensures in a single list at a given time
         (*req).list_set_next(std::ptr::null_mut(), Ordering::Relaxed);
         let mut old_tail = self.tail.load(Ordering::Acquire);
