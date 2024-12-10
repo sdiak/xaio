@@ -6,7 +6,6 @@ use super::driver_none::DriverNone;
 #[cfg(target_os = "linux")]
 use super::driver_uring::DriverURing;
 
-use super::driver_waker::DriverWaker;
 use super::{Request, RequestList};
 use bitflags::bitflags;
 use enum_dispatch::enum_dispatch;

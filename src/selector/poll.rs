@@ -1,11 +1,7 @@
 use std::collections::HashMap;
-use std::os::raw::c_short;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
-use super::Event;
 use super::Interest;
-use super::SelectorImpl;
 use crate::RawSocketFd;
 
 #[cfg_attr(not(target_os = "windows"), path = "rawpoll_unix.rs")]

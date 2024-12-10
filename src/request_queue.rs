@@ -1,7 +1,7 @@
 use std::sync::atomic::AtomicUsize;
-use std::{ptr, sync::atomic::Ordering};
+use std::sync::atomic::Ordering;
 
-use crate::{request, ReadyList, Request, PENDING};
+use crate::{request, ReadyList, Request};
 
 const PARK_BIT: usize = 1usize;
 

@@ -1,6 +1,4 @@
-use std::{cell::RefCell, default, ptr, sync::atomic::Ordering};
-
-use crate::RingInner;
+use std::sync::atomic::Ordering;
 
 pub(super) const PENDING: i32 = i32::MIN;
 pub(super) const UNKNOWN: i32 = i32::MIN + 1;
