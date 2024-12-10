@@ -78,7 +78,7 @@ impl RingInner {
             rc: 1 as _,
             arc: AtomicU32::new(0u32),
             epoch: *EPOCH,
-            now_ms: EPOCH.elapsed().as_millis() as u64, // SAFETY: program is not expected to run more than 2.5ee+13 years
+            now_ms: EPOCH.elapsed().as_millis() as u64, // SAFETY: program is not expected to run more than ~ 2.5e+13 years
             driver,
             concurrent: RequestQueue::new(),
             ready: ReadyList::new(),
@@ -88,7 +88,7 @@ impl RingInner {
         })
     }
     pub fn update_now(&mut self) -> u64 {
-        self.now_ms = self.epoch.elapsed().as_millis() as u64; // SAFETY: program is not expected to run more than 2.5ee+13 years
+        self.now_ms = self.epoch.elapsed().as_millis() as u64; // SAFETY: program is not expected to run more than ~ 2.5e+13 years
         self.now_ms
     }
     pub fn now(&self) -> u64 {
