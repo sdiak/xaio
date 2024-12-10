@@ -1,10 +1,9 @@
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxBuildHasher, FxHashSet};
 use std::collections::HashSet;
 use std::{
     io::{Error, ErrorKind, Result},
     u64, usize,
 };
-type RandomState = std::hash::RandomState;
 
 struct Entry {
     deadline: u64,
@@ -17,15 +16,18 @@ pub struct TimerHeap {
 
 impl TimerHeap {
     pub fn new(capacity: usize) -> Result<Self> {
-        // let tokens =
-        //     FxHashSet::with_capacity_and_hasher::<usize>(capacity, std::hash::RandomState::new())
-        //         .tokens;
-        // let entries = Vec::with_capacity::<Entry>::(capacity);
-        let entries = Vec::<Entry>::with_capacity(capacity);
-        let hasher = RandomState::new();
-        let tokens: FxHashSet<Entry> = FxHashSet::default();
-        let tokens: FxHashSet<Entry> = FxHashSet::FxHashSet<Entry>::with_capacity_and_hasher(capacity, FxBuildHasher);
-        Err(Error::from(ErrorKind::OutOfMemory))
+        match std::panic::catch_unwind(|| TimerHeap {
+            tokens: FxHashSet::<usize>::with_capacity_and_hasher(capacity, FxBuildHasher),
+            entries: Vec::<Entry>::with_capacity(capacity),
+        }) {
+            Ok(th) => Ok(th),
+            Err(_) => Err(Error::from(ErrorKind::OutOfMemory)),
+        }
+        // let entries = Vec::<Entry>::with_capacity(capacity);
+        // let tokens: FxHashSet<Entry> = FxHashSet::default();
+        // let tokens: FxHashSet<Entry> =
+        //     FxHashSet::<Entry>::with_capacity_and_hasher(capacity, FxBuildHasher);
+        // Err(Error::from(ErrorKind::OutOfMemory))
         // Ok(TimerHeap { tokens, entries })
         // let result = Ok((
         //     HashSet::<usize, RandomState>::with_capacity_and_hasher(capacity, RandomState::new()),
