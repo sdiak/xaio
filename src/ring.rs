@@ -1,4 +1,7 @@
-use std::{cell::RefCell, sync::atomic::AtomicU32};
+use std::sync::LazyLock;
+use std::{cell::RefCell, sync::atomic::AtomicU32, time::Instant};
+
+use num::ToPrimitive;
 
 use crate::{
     request_queue::RequestQueue, Driver, DriverIFace, PhantomUnsend, PhantomUnsync, ReadyList,
@@ -8,9 +11,13 @@ use std::io::Result;
 
 use crate::details::TimerHeap;
 
+static EPOCH: LazyLock<Instant> = LazyLock::new(Instant::now);
+
 pub(crate) struct RingInner {
     rc: u32,
     arc: AtomicU32, // TODO: prefer counting the wakers
+    epoch: Instant,
+    now_ms: u64,
     driver: Box<Driver>,
     concurrent: RequestQueue,
     ready: ReadyList,
@@ -70,6 +77,8 @@ impl RingInner {
         Ok(Self {
             rc: 1 as _,
             arc: AtomicU32::new(0u32),
+            epoch: *EPOCH,
+            now_ms: EPOCH.elapsed().as_millis() as u64, // SAFETY: program is not expected to run more than 2.5ee+13 years
             driver,
             concurrent: RequestQueue::new(),
             ready: ReadyList::new(),
@@ -77,6 +86,13 @@ impl RingInner {
             _unsync: PhantomUnsync {},
             _unsend: PhantomUnsend {},
         })
+    }
+    pub fn update_now(&mut self) -> u64 {
+        self.now_ms = self.epoch.elapsed().as_millis() as u64; // SAFETY: program is not expected to run more than 2.5ee+13 years
+        self.now_ms
+    }
+    pub fn now(&self) -> u64 {
+        self.now_ms
     }
     fn cancel(_sub: &Completion) {}
     pub fn wait(&mut self) {
