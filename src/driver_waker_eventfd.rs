@@ -1,7 +1,7 @@
-use crate::libc_write_all;
+use crate::{libc_read_all, libc_write_all, selector::rawpoll};
 
 use super::libc_close_log_on_error;
-use std::io::{Error, Result};
+use std::io::{Error, ErrorKind, Result};
 
 #[derive(Debug)]
 pub(crate) struct DriverWaker {
@@ -24,7 +24,7 @@ impl DriverWaker {
     }
     #[inline]
     pub fn wake(&self) -> Result<()> {
-        let unpark_msg = 1u64.to_le_bytes();
+        let unpark_msg = 1u64.to_ne_bytes();
         libc_write_all(self.evfd, &unpark_msg, true)
     }
     #[inline]
@@ -33,4 +33,15 @@ impl DriverWaker {
     }
     #[inline]
     pub(crate) fn drain(&self) {}
+
+    pub(crate) fn wait(&self, timeout_ms: i32) {
+        let mut unpark_msg = 0u64.to_ne_bytes();
+        if let Err(err) = libc_read_all(self.evfd, &mut unpark_msg, true) {
+            log::warn!(
+                "Unexepected error in `DriverWaker::wait(&self, timeout_ms={timeout_ms}): {err}"
+            );
+        } else {
+            self.drain();
+        }
+    }
 }

@@ -25,7 +25,7 @@ impl DriverWaker {
     }
     #[inline]
     pub fn wake(&self) -> Result<()> {
-        let unpark_msg = 1u8.to_le_bytes();
+        let unpark_msg = 1u8.to_ne_bytes();
         libc_write_all(self.write_end, &unpark_msg, true)
     }
     #[inline]
@@ -34,7 +34,17 @@ impl DriverWaker {
     }
     #[inline]
     pub(crate) fn drain(&self) {
-        let mut sync = 0u128.to_le_bytes();
+        let mut sync = 0u128.to_ne_bytes();
         while libc_read_all(self.read_end, &mut sync, false).is_ok() {}
+    }
+    pub(crate) fn wait(&self, timeout_ms: i32) {
+        let mut unpark_msg = 0u8.to_ne_bytes();
+        if let Err(err) = libc_read_all(self.read_end, &mut unpark_msg, true) {
+            log::warn!(
+                "Unexepected error in `DriverWaker::wait(&self, timeout_ms={timeout_ms}): {err}"
+            );
+        } else {
+            self.drain();
+        }
     }
 }
