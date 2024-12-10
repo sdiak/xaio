@@ -3,7 +3,7 @@ use std::{cell::RefCell, marker::PhantomData, ptr::NonNull, rc::Rc, sync::atomic
 use crate::{
     driver_waker::DriverWaker,
     request_queue::{RequestQueue, RequestQueueParkScope},
-    Driver, PhantomUnsend, PhantomUnsync, ReadyList, Request,
+    Driver, DriverIFace, PhantomUnsend, PhantomUnsync, ReadyList, Request,
 };
 use std::io::{Error, ErrorKind, Result};
 
@@ -15,7 +15,7 @@ pub(crate) struct RingInner {
     driver: Box<Driver>,
     concurrent: RequestQueue,
     ready: ReadyList,
-    // timeouts: TimerHeap,
+    timeouts: TimerHeap,
     _unsync: PhantomUnsync,
     _unsend: PhantomUnsend,
 }
@@ -32,10 +32,10 @@ impl Drop for Ring {
     }
 }
 impl Ring {
-    pub fn new(driver: Box<Driver>) -> Self {
-        Self {
-            inner: Box::new(RefCell::new(RingInner::new(driver))),
-        }
+    pub fn new(driver: Box<Driver>) -> Result<Self> {
+        Ok(Self {
+            inner: Box::new(RefCell::new(RingInner::new(driver)?)),
+        })
     }
 }
 
@@ -60,16 +60,23 @@ impl Ring {
 }
 
 impl RingInner {
-    fn new(driver: Box<Driver>) -> Self {
-        Self {
+    fn new(driver: Box<Driver>) -> Result<Self> {
+        let timer_capacity = driver.config().submission_queue_depth as usize;
+        let timer_capacity = if timer_capacity < 64 {
+            64
+        } else {
+            timer_capacity
+        };
+        Ok(Self {
             rc: 1 as _,
             arc: AtomicU32::new(0u32),
             driver: driver,
             concurrent: RequestQueue::new(),
             ready: ReadyList::new(),
+            timeouts: TimerHeap::new(timer_capacity)?,
             _unsync: PhantomUnsync {},
             _unsend: PhantomUnsend {},
-        }
+        })
     }
     fn cancel(_sub: &Completion) {}
     pub fn wait(&mut self) {
