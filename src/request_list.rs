@@ -94,28 +94,28 @@ impl RequestList {
             (*prev).list_update_next(node, Ordering::Relaxed);
         }
     }
-    /// O(n)
-    unsafe fn pop_back(&mut self) -> *mut Request {
-        if self.head.is_null() {
-            ptr::null_mut()
-        } else {
-            let mut prev: *mut Request = self.head;
-            let mut prev_next = unsafe { (*prev).list_get_next(Ordering::Relaxed) };
-            if prev_next.is_null() {
-                self.head = prev_next;
-                return prev;
-            }
-            let mut prev_next_next = unsafe { (*prev_next).list_get_next(Ordering::Relaxed) };
-            while !prev_next_next.is_null() {
-                prev = prev_next;
-                prev_next = prev_next_next;
-                prev_next_next = unsafe { (*prev_next).list_get_next(Ordering::Relaxed) };
-            }
-            (*prev).list_update_next(ptr::null_mut(), Ordering::Relaxed);
-            (*prev_next).list_pop_next(Ordering::Relaxed);
-            prev_next
-        }
-    }
+    // /// O(n)
+    // unsafe fn pop_back(&mut self) -> *mut Request {
+    //     if self.head.is_null() {
+    //         ptr::null_mut()
+    //     } else {
+    //         let mut prev: *mut Request = self.head;
+    //         let mut prev_next = unsafe { (*prev).list_get_next(Ordering::Relaxed) };
+    //         if prev_next.is_null() {
+    //             self.head = prev_next;
+    //             return prev;
+    //         }
+    //         let mut prev_next_next = unsafe { (*prev_next).list_get_next(Ordering::Relaxed) };
+    //         while !prev_next_next.is_null() {
+    //             prev = prev_next;
+    //             prev_next = prev_next_next;
+    //             prev_next_next = unsafe { (*prev_next).list_get_next(Ordering::Relaxed) };
+    //         }
+    //         (*prev).list_update_next(ptr::null_mut(), Ordering::Relaxed);
+    //         (*prev_next).list_pop_next(Ordering::Relaxed);
+    //         prev_next
+    //     }
+    // }
 }
 
 #[cfg(test)]
@@ -144,6 +144,56 @@ mod test {
     #[test]
     #[should_panic]
     fn test_push_front_null() {
+        let mut l = RequestList::new();
+        unsafe { l.push_front(ptr::null_mut()) };
+    }
+
+    #[test]
+    fn test_push_back() {
+        let mut l = RequestList::new();
+        let mut a = Request::default();
+        let mut b = Request::default();
+        let mut c = Request::default();
+        assert!(l.is_empty());
+        assert!(!l.contains(ptr::null()));
+        assert!(!l.contains(&a as *const Request));
+        assert!(unsafe { l.pop_front() }.is_null());
+        assert!(!a.in_a_list());
+        unsafe { l.push_back(&mut a as *mut Request) };
+        assert!(l.contains(&a as *const Request));
+        assert!(!l.is_empty());
+        assert!(a.in_a_list());
+        assert_eq!(unsafe { l.pop_front() }, &mut a as *mut Request);
+        assert!(l.is_empty());
+        assert!(unsafe { l.pop_front() }.is_null());
+        assert!(!a.in_a_list());
+        assert!(!l.contains(&a as *const Request));
+        assert!(!l.contains(&b as *const Request));
+        assert!(!l.contains(&c as *const Request));
+        unsafe { l.push_front(&mut a as *mut Request) };
+        assert!(l.contains(&a as *const Request));
+        assert!(!l.contains(&b as *const Request));
+        assert!(!l.contains(&c as *const Request));
+        unsafe { l.push_back(&mut b as *mut Request) };
+        assert!(l.contains(&a as *const Request));
+        assert!(l.contains(&b as *const Request));
+        assert!(!l.contains(&c as *const Request));
+        unsafe { l.push_back(&mut c as *mut Request) };
+        assert!(l.contains(&a as *const Request) && a.in_a_list());
+        assert!(l.contains(&b as *const Request) && b.in_a_list());
+        assert!(l.contains(&c as *const Request) && c.in_a_list());
+
+        assert_eq!(unsafe { l.pop_front() }, &mut a as *mut Request);
+        assert!(!l.contains(&a as *const Request) && !a.in_a_list());
+        assert_eq!(unsafe { l.pop_front() }, &mut b as *mut Request);
+        assert!(!l.contains(&b as *const Request) && !b.in_a_list());
+        assert_eq!(unsafe { l.pop_front() }, &mut c as *mut Request);
+        assert!(!l.contains(&c as *const Request) && !c.in_a_list());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_push_back_null() {
         let mut l = RequestList::new();
         unsafe { l.push_front(ptr::null_mut()) };
     }

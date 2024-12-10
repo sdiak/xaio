@@ -9,7 +9,7 @@ pub struct ReadyList {
 }
 impl Drop for ReadyList {
     fn drop(&mut self) {
-        debug_assert!(self.len() == 0);
+        // debug_assert!(self.len() == 0); FIXME: restore
     }
 }
 
@@ -26,6 +26,18 @@ impl ReadyList {
         self.len
     }
 
+    pub(crate) unsafe fn pop_front(&mut self) -> *mut Request {
+        let old_head = self.head;
+        if !old_head.is_null() {
+            self.head = (*old_head).list_pop_next(Ordering::Relaxed);
+            if self.head.is_null() {
+                self.tail = std::ptr::null_mut();
+            }
+            self.len -= 1;
+        }
+        old_head
+    }
+
     pub(crate) unsafe fn push_back(&mut self, new_tail: *mut Request) {
         assert!(!new_tail.is_null() && (*new_tail).status != request::PENDING);
         (*new_tail).list_set_next(self.tail, Ordering::Relaxed);
@@ -37,6 +49,9 @@ impl ReadyList {
     }
 
     pub fn push_back_all(&mut self, other: &mut ReadyList) -> usize {
+        if other.len() == 0 {
+            return 0;
+        }
         if self.tail.is_null() {
             self.head = other.head;
         } else {

@@ -46,11 +46,9 @@ impl<'scope> RequestQueueParkScope<'scope> {
 }
 impl<'scope> Drop for RequestQueueParkScope<'scope> {
     fn drop(&mut self) {
-        if self.parked {
-            let tail: *mut Request = (self.queue.tail.swap(0, Ordering::Acquire) & !PARK_BIT) as _;
-            if !tail.is_null() {
-                self.ready.push_back_all(&mut reverse_list(tail));
-            }
+        let tail: *mut Request = (self.queue.tail.swap(0, Ordering::Acquire) & !PARK_BIT) as _;
+        if !tail.is_null() {
+            self.ready.push_back_all(&mut reverse_list(tail));
         }
     }
 }
@@ -111,5 +109,36 @@ impl RequestQueue {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_simple() {
+        let mut a = Request::default();
+        let mut b = Request::default();
+        let mut c = Request::default();
+        let mut d = Request::default();
+        let mut rq = RequestQueue::new();
+        let mut ready = ReadyList::new();
+        unsafe {
+            rq.push(&mut a as *mut Request);
+            rq.push(&mut b as *mut Request);
+            rq.push(&mut c as *mut Request);
+        }
+        {
+            let scope = RequestQueueParkScope::new(&mut rq, &mut ready, false);
+            // unsafe {
+            //     rq.push(&mut d as *mut Request);
+            // }
+        }
+        assert_eq!(unsafe { ready.pop_front() }, &mut a as *mut Request);
+        assert_eq!(unsafe { ready.pop_front() }, &mut b as *mut Request);
+        assert_eq!(unsafe { ready.pop_front() }, &mut c as *mut Request);
+        // assert_eq!(unsafe { l.pop_front() }, &mut a as *mut Request);
+        std::mem::forget(ready);
     }
 }
