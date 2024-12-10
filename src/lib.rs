@@ -1,5 +1,6 @@
 mod buffer;
 mod capi;
+mod details;
 mod driver;
 mod driver_none;
 mod driver_uring;
