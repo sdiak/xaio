@@ -39,12 +39,31 @@ impl DriverWaker {
     }
     pub(crate) fn wait(&self, timeout_ms: i32) {
         let mut unpark_msg = 0u8.to_ne_bytes();
-        if let Err(err) = libc_read_all(self.read_end, &mut unpark_msg, true) {
-            log::warn!(
-                "Unexepected error in `DriverWaker::wait(&self, timeout_ms={timeout_ms}): {err}"
-            );
-        } else {
-            self.drain();
+        let pollfd = &mut [rawpoll::PollFD {
+            fd: self.read_end,
+            events: rawpoll::POLLIN,
+            revents: 0 as _,
+        }];
+        loop {
+            match libc_read_all(self.read_end, &mut unpark_msg, false) {
+                Ok(_) => {
+                    return;
+                }
+                Err(err) if err.kind() == ErrorKind::WouldBlock => {
+                    if let Err(pe) = rawpoll::sys_poll(pollfd, timeout_ms) {
+                        log::warn!(
+                            "Unexepected error in `DriverWaker::wait(&self, timeout_ms={timeout_ms}): {pe}"
+                        );
+                        return;
+                    }
+                }
+                Err(err) => {
+                    log::warn!(
+                        "Unexepected error in `DriverWaker::wait(&self, timeout_ms={timeout_ms}): {err}"
+                    );
+                    return;
+                }
+            }
         }
     }
 }
