@@ -29,7 +29,7 @@ pub trait DriverIFace {
 
     fn config(&self) -> &DriverConfig;
 
-    fn wait(&mut self, timeout: Option<Duration>, ready_list: &mut RequestList) -> Result<i32>;
+    fn wait(&mut self, timeout_ms: i32, ready_list: &mut RequestList) -> Result<i32>;
 
     fn submit(&mut self, sub: Pin<&mut Request>) -> Result<()>;
     fn cancel(&mut self, sub: Pin<&Request>) -> Result<()>;

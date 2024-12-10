@@ -1,5 +1,6 @@
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use std::time;
 
 use crate::{request, ReadyList, Request};
 
@@ -58,6 +59,7 @@ impl RequestQueue {
     ///   `timeout_ms` or `0` when some request are already available.
     ///   The caller should use it like so : `timeout_ms = request_queue.park_begin(timeout_ms);`
     pub(crate) unsafe fn park_begin(&self, timeout_ms: i32) -> i32 {
+        let timeout_ms = timeout_ms as u32; // negative number becomes larger than i32::MAX (two’s complement)
         if timeout_ms > 0 {
             loop {
                 match self.tail.compare_exchange_weak(
@@ -67,19 +69,19 @@ impl RequestQueue {
                     Ordering::Relaxed,
                 ) {
                     Ok(_) => {
-                        return timeout_ms;
+                        return timeout_ms as i32;
                     }
                     Err(current) => {
                         if current != 0usize {
                             // At least one ready requests is available ; do not wait
-                            return 0;
+                            return 0i32;
                         }
                         // LCOV_EXCL_LINE : spurious failure, I do not know how to produce them in tests
                     }
                 }
             }
         }
-        0
+        0i32
     }
 
     /// Ends park

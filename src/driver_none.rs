@@ -49,7 +49,7 @@ impl DriverIFace for DriverNone {
     }
     fn wait(
         &mut self,
-        _timeout: Option<std::time::Duration>,
+        timeout_ms: i32,
         _ready_list: &mut crate::RequestList,
     ) -> std::io::Result<i32> {
         Err(Error::from(ErrorKind::Unsupported))

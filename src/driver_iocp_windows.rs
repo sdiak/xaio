@@ -115,10 +115,9 @@ impl DriverIFace for DriverIOCP {
     }
     fn wait(
         &mut self,
-        timeout: Option<std::time::Duration>,
+        timeout_ms: i32,
         _ready_list: &mut crate::RequestList,
     ) -> std::io::Result<i32> {
-        let timeout_ms = saturating_opt_duration_to_ms(timeout);
         let timeout_ms = if timeout_ms < 0 {
             0xFFFFFFFFu32
         } else {

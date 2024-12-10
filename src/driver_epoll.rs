@@ -85,19 +85,15 @@ impl DriverIFace for DriverEPoll {
     }
     fn wait(
         &mut self,
-        timeout: Option<std::time::Duration>,
+        timeout_ms: i32,
         _ready_list: &mut crate::RequestList,
     ) -> std::io::Result<i32> {
-        let mut ts_mem = libc::timespec {
-            tv_nsec: 0 as _,
-            tv_sec: 0 as _,
-        };
         let n_events = unsafe {
-            libc::epoll_pwait2(
+            libc::epoll_pwait(
                 self.epollfd,
                 self.buffer.as_mut_ptr(),
                 BUFFER_SIZE as libc::c_int,
-                saturating_opt_duration_to_timespec(timeout, &mut ts_mem), // SAFETY: ts_mem is live for the whole function
+                timeout_ms,
                 std::ptr::null(),
             )
         };
