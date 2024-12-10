@@ -7,12 +7,15 @@ use crate::{
 };
 use std::io::{Error, ErrorKind, Result};
 
+use crate::details::TimerHeap;
+
 pub(crate) struct RingInner {
     rc: u32,
     arc: AtomicU32, // TODO: prefer counting the wakers
     driver: Box<Driver>,
     concurrent: RequestQueue,
     ready: ReadyList,
+    // timeouts: TimerHeap,
     _unsync: PhantomUnsync,
     _unsend: PhantomUnsend,
 }
