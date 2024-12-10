@@ -23,20 +23,6 @@ impl TimerHeap {
             Ok(th) => Ok(th),
             Err(_) => Err(Error::from(ErrorKind::OutOfMemory)),
         }
-        // let entries = Vec::<Entry>::with_capacity(capacity);
-        // let tokens: FxHashSet<Entry> = FxHashSet::default();
-        // let tokens: FxHashSet<Entry> =
-        //     FxHashSet::<Entry>::with_capacity_and_hasher(capacity, FxBuildHasher);
-        // Err(Error::from(ErrorKind::OutOfMemory))
-        // Ok(TimerHeap { tokens, entries })
-        // let result = Ok((
-        //     HashSet::<usize, RandomState>::with_capacity_and_hasher(capacity, RandomState::new()),
-        //     Vec::<Entry>::with_capacity(capacity)
-        // )); // std::panic::catch_unwind(||
-        // match result {
-        //     Ok((tokens, entries)) => Ok(TimerHeap{tokens, entries}),
-        //     Err(Error::from(ErrorKind::OutOfMemory)),
-        // }
     }
     pub fn len(&self) -> usize {
         self.tokens.len()
@@ -54,6 +40,7 @@ impl TimerHeap {
             Ok(())
         }
     }
+
     pub fn pop(&mut self) -> Option<usize> {
         // Clean up removed elements "tombstones"
         self.discard_head_tombstones();
@@ -70,6 +57,15 @@ impl TimerHeap {
             None
         }
     }
+
+    pub fn next_deadline(&self, current_deadline: u64) -> u64 {
+        if self.tokens.len() > 0 && self.entries[0].deadline < current_deadline {
+            self.entries[0].deadline
+        } else {
+            current_deadline
+        }
+    }
+
     pub fn remove(&mut self, token: usize) -> bool {
         let was_present = self.tokens.remove(&token);
         if was_present && self.entries[0].token == token {
