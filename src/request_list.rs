@@ -88,7 +88,7 @@ impl RequestList {
             let mut prev: *mut Request = self.head;
             let mut prev_next = (*prev).list_get_next(Ordering::Relaxed);
             while !prev_next.is_null() {
-                prev = prev_next as *mut Request;
+                prev = prev_next;
                 prev_next = (*prev).list_get_next(Ordering::Relaxed);
             }
             (*prev).list_update_next(node, Ordering::Relaxed);

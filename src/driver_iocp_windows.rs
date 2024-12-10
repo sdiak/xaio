@@ -15,7 +15,7 @@ pub(crate) const WAKE_TOKEN: usize = 0usize;
 
 const BUFFER_SIZE: usize = 256usize;
 
-const DRIVER_NAME: &'static str = "IOCP";
+const DRIVER_NAME: &str = "IOCP";
 
 pub struct DriverIOCP {
     iocp: HANDLE,

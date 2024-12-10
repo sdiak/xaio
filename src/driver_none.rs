@@ -3,7 +3,7 @@ use crate::{
 };
 use std::io::{Error, ErrorKind, Result};
 
-const DRIVER_NAME: &'static str = "None";
+const DRIVER_NAME: &str = "None";
 
 #[derive(Debug)]
 pub struct DriverNone {
@@ -29,7 +29,7 @@ impl DriverNone {
         real_config.flags = DriverFlags::CLOSE_ON_EXEC.bits();
         let name = name.unwrap_or(DRIVER_NAME);
         Ok(DriverNone {
-            name: name,
+            name,
             config: real_config,
         })
     }

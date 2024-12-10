@@ -1,7 +1,4 @@
 use bitflags::bitflags;
-use libc;
-use std::num::NonZeroU32;
-use std::{fmt, ops};
 
 #[cfg(target_os = "linux")]
 const READABLE: u32 = libc::EPOLLIN as u32;

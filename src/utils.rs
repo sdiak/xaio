@@ -35,7 +35,7 @@ pub(crate) fn libc_read_all(fd: libc::c_int, buf: &mut [u8], block_on_eagain: bo
                 ErrorKind::WouldBlock => {
                     if block_on_eagain {
                         let pollfd = &mut [rawpoll::PollFD {
-                            fd: fd,
+                            fd,
                             events: rawpoll::POLLIN,
                             revents: 0 as _,
                         }];
@@ -69,7 +69,7 @@ pub(crate) fn libc_write_all(fd: libc::c_int, buf: &[u8], block_on_eagain: bool)
                 ErrorKind::WouldBlock => {
                     if block_on_eagain {
                         let pollfd = &mut [rawpoll::PollFD {
-                            fd: fd,
+                            fd,
                             events: rawpoll::POLLOUT,
                             revents: 0 as _,
                         }];

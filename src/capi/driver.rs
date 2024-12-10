@@ -2,7 +2,7 @@
 pub const XDRIVER_FLAG_ATTACH_HANDLE: u32 = 0x00000001u32;
 pub const XDRIVER_FLAG_CLOSE_ON_EXEC: u32 = 0x00000002u32;
 
-use std::{alloc::Layout, default, ffi::c_void, pin::Pin, usize};
+use std::{alloc::Layout, default, ffi::c_void, pin::Pin};
 
 use crate::capi::{xaio_s, xcp_s};
 
@@ -86,10 +86,10 @@ pub unsafe extern "C" fn xdriver_new(
     let clazz = opt_clazz.unwrap_or(xdriver_class_default());
 
     let mut params_memory = xdriver_params_s::default();
-    let params = opt_params.unwrap_or(&*((*clazz).default_params)(&mut params_memory));
+    let params = opt_params.unwrap_or(&*(clazz.default_params)(&mut params_memory));
 
     let driver: *mut xdriver_s = std::alloc::alloc_zeroed(
-        Layout::from_size_align((*clazz).instance_size, (*clazz).instance_align as _)
+        Layout::from_size_align(clazz.instance_size, clazz.instance_align as _)
             .expect("Invalid layout"),
     ) as _;
     if driver.is_null() {

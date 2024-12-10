@@ -2,6 +2,7 @@ extern crate cbindgen;
 
 use std::env;
 
+#[allow(clippy::field_reassign_with_default)]
 fn main() {
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let mut config: cbindgen::Config = Default::default();

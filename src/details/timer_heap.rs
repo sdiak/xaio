@@ -1,9 +1,5 @@
 use rustc_hash::{FxBuildHasher, FxHashSet};
-use std::collections::HashSet;
-use std::{
-    io::{Error, ErrorKind, Result},
-    u64, usize,
-};
+use std::io::{Error, ErrorKind, Result};
 
 #[derive(Debug)]
 struct Entry {
@@ -44,7 +40,7 @@ impl TimerHeap {
 
     pub fn pop(&mut self) -> Option<usize> {
         // Clean up removed elements "tombstones"
-        if self.tokens.len() > 0 {
+        if !self.tokens.is_empty() {
             // Remove the first element
             let new_len = self.entries.len() - 1;
             let token = self.entries[0].token;
@@ -53,7 +49,7 @@ impl TimerHeap {
             self.restore_down(0);
             self.tokens.remove(&token);
             // Ensure that self.entries[0].token is always valid (when self.len() > 0)
-            if self.entries.len() > 0 && !self.tokens.contains(&self.entries[0].token) {
+            if !self.entries.is_empty() && !self.tokens.contains(&self.entries[0].token) {
                 self.discard_head_tombstones();
             }
             Some(token)
@@ -77,7 +73,7 @@ impl TimerHeap {
     }
 
     pub fn next(&self) -> Option<usize> {
-        if self.tokens.len() > 0 {
+        if !self.tokens.is_empty() {
             Some(self.entries[0].token)
         } else {
             None
@@ -90,7 +86,7 @@ impl TimerHeap {
         //     self.tokens.len(),
         //     self.entries.len(),
         // );
-        if self.tokens.len() > 0 && self.entries[0].deadline < current_deadline {
+        if !self.tokens.is_empty() && self.entries[0].deadline < current_deadline {
             self.entries[0].deadline
         } else {
             current_deadline
@@ -114,7 +110,7 @@ impl TimerHeap {
         //     new_len
         // );
         // Clean up removed elements "tombstones"
-        while self.entries.len() > 0 && !self.tokens.contains(&self.entries[0].token) {
+        while !self.entries.is_empty() && !self.tokens.contains(&self.entries[0].token) {
             let new_len = self.entries.len().saturating_sub(1);
             // println!(" 1 Tombstone {:?}", self.entries);
             self.entries.swap(0, new_len);

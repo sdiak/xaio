@@ -10,21 +10,23 @@ pub struct ReadyList {
 }
 impl Drop for ReadyList {
     fn drop(&mut self) {
-        debug_assert!(self.len() == 0);
+        debug_assert!(self.is_empty());
     }
 }
 
 impl ReadyList {
     pub fn new() -> Self {
-        Self {
-            head: std::ptr::null_mut(),
-            tail: std::ptr::null_mut(),
-            len: 0,
-        }
+        Self::default()
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
         self.len
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
     }
 
     pub(crate) unsafe fn pop_front(&mut self) -> *mut Request {
@@ -52,7 +54,7 @@ impl ReadyList {
     }
 
     pub fn push_back_all(&mut self, other: &mut ReadyList) -> usize {
-        if other.len() == 0 {
+        if other.is_empty() {
             return 0;
         }
         if self.tail.is_null() {
@@ -67,6 +69,15 @@ impl ReadyList {
         other.tail = std::ptr::null_mut();
         self.len += transfered;
         transfered
+    }
+}
+impl Default for ReadyList {
+    fn default() -> Self {
+        Self {
+            head: std::ptr::null_mut(),
+            tail: std::ptr::null_mut(),
+            len: 0,
+        }
     }
 }
 

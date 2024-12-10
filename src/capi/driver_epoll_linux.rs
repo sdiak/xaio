@@ -22,7 +22,7 @@ extern "C" fn xepoll_default_params(params: &mut xdriver_params_s) -> &mut xdriv
 }
 extern "C" fn xepoll_open(thiz: &mut c_void, port: &xcp_s) -> i32 {
     let thiz: &mut EPoll = unsafe { &mut *(std::ptr::from_mut(thiz) as *mut EPoll) };
-    let flags = if ((*thiz).sup.params.flags & XDRIVER_FLAG_CLOSE_ON_EXEC) != 0u32 {
+    let flags = if (thiz.sup.params.flags & XDRIVER_FLAG_CLOSE_ON_EXEC) != 0u32 {
         libc::EPOLL_CLOEXEC
     } else {
         0 as libc::c_int
@@ -34,7 +34,7 @@ extern "C" fn xepoll_open(thiz: &mut c_void, port: &xcp_s) -> i32 {
         0
     }
 }
-extern "C" fn xepoll_close(thiz: &mut c_void, port: &xcp_s) -> () {
+extern "C" fn xepoll_close(thiz: &mut c_void, port: &xcp_s) {
     let thiz: &mut EPoll = unsafe { &mut *(std::ptr::from_mut(thiz) as *mut EPoll) };
     if thiz.fd > -1 && unsafe { libc::close(thiz.fd) } < 0 {
         log::warn!(

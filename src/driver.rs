@@ -40,6 +40,7 @@ pub trait DriverIFace {
     fn get_native_handle(&self) -> DriverHandle;
 }
 
+#[allow(clippy::large_enum_variant)]
 #[enum_dispatch(DriverIFace)]
 pub enum Driver {
     // #[cfg(target_os = "linux")]

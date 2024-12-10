@@ -5,7 +5,7 @@ use crate::{
 use std::io::{Error, ErrorKind, Result};
 
 const BUFFER_SIZE: usize = 256usize;
-const DRIVER_NAME: &'static str = "EPoll";
+const DRIVER_NAME: &str = "EPoll";
 
 #[derive(Debug)]
 pub struct DriverEPoll {
@@ -47,8 +47,8 @@ impl DriverEPoll {
                 epollfd
             };
         Ok(Self {
-            epollfd: epollfd,
-            waker: waker,
+            epollfd,
+            waker,
             config: real_config,
             buffer: unsafe { std::mem::MaybeUninit::zeroed().assume_init() },
         })

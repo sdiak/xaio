@@ -52,9 +52,10 @@ impl Drop for Completion {
 }
 
 impl Ring {
-    pub fn submit<'a, 'b>(&'a self, sub: &'b mut Request) -> Result<&'b mut Completion> {
+    pub fn submit(&self, sub: &mut Request) -> Result<&mut Completion> {
         // todo!(); TODO:
-        Ok(unsafe { std::mem::transmute(sub) })
+        Ok(unsafe { std::mem::transmute::<&mut Request, &mut &mut Completion>(sub) })
+        // SAFETY: `transmute()` because both are same type
     }
 }
 
@@ -69,7 +70,7 @@ impl RingInner {
         Ok(Self {
             rc: 1 as _,
             arc: AtomicU32::new(0u32),
-            driver: driver,
+            driver,
             concurrent: RequestQueue::new(),
             ready: ReadyList::new(),
             timeouts: TimerHeap::new(timer_capacity)?,
