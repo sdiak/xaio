@@ -1,11 +1,7 @@
 use crate::libc_write_all;
 
-use super::{libc_close_log_on_error, selector::rawpoll};
-use std::{
-    fs::File,
-    io::{Error, ErrorKind, Result, Write},
-    os::fd::FromRawFd,
-};
+use super::libc_close_log_on_error;
+use std::io::{Error, Result};
 
 #[derive(Debug)]
 pub(crate) struct DriverWaker {

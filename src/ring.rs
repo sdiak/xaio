@@ -1,9 +1,8 @@
 use std::{cell::RefCell, marker::PhantomData, ptr::NonNull, rc::Rc, sync::atomic::AtomicU32};
 
 use crate::{
-    driver_waker::DriverWaker,
-    request_queue::{RequestQueue, RequestQueueParkScope},
-    Driver, DriverIFace, PhantomUnsend, PhantomUnsync, ReadyList, Request,
+    driver_waker::DriverWaker, request_queue::RequestQueue, Driver, DriverIFace, PhantomUnsend,
+    PhantomUnsync, ReadyList, Request,
 };
 use std::io::{Error, ErrorKind, Result};
 
@@ -82,8 +81,8 @@ impl RingInner {
     pub fn wait(&mut self) {
         let need_park: bool = false;
         if need_park {
-            let _scoped_parker =
-                RequestQueueParkScope::new(&mut self.concurrent, &mut self.ready, need_park);
+            // let _scoped_parker =
+            //     RequestQueueParkScope::new(&mut self.concurrent, &mut self.ready, need_park);
             todo!();
         }
     }

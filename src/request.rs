@@ -11,7 +11,7 @@ pub struct Request {
     #[cfg(target_os = "windows")]
     win_header: windows_sys::Win32::System::IO::OVERLAPPED,
     // prv__cp: *mut xcp_s,
-    pub(crate) owner: Option<RefCell<RingInner>>,
+    // pub(crate) owner: Option<RefCell<RingInner>>,
     // request status
     pub(crate) status: i32,
     // reques status set by a concurrent thread
