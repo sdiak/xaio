@@ -4,6 +4,15 @@ use windows_sys::Win32::System::IO::PostQueuedCompletionStatus;
 pub(crate) struct DriverWaker {
     handle: HANDLE,
 }
+/*
+https://stackoverflow.com/a/78909504
+
+
+Associate the Event object with IOCP, and get I/O Completion when it gets signalled, using [NtAssociateWaitCompletionPacket](https://learn.microsoft.com/en-us/windows/win32/devnotes/ntassociatewaitcompletionpacket). It's supported on Windows 8 and later.
+
+See example here: https://github.com/tringi/win32-iocp-events
+
+ */
 impl DriverWaker {
     pub(crate) fn new() -> Result<Self> {
         let handle =
@@ -35,4 +44,5 @@ impl DriverWaker {
     }
     #[inline]
     pub(crate) fn drain(&self) {}
+    pub(crate) fn wait(&self, timeout_ms: i32) {}
 }
