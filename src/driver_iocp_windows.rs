@@ -1,6 +1,6 @@
-use crate::driver_waker::{self, DriverWaker};
 use crate::{
-    saturating_opt_duration_to_ms, DriverConfig, DriverFlags, DriverHandle, DriverIFace, Request,
+    saturating_opt_duration_to_ms, sys::Event, DriverConfig, DriverFlags, DriverHandle,
+    DriverIFace, Request,
 };
 use std::io::{Error, ErrorKind, Result};
 use windows_sys::Win32::Foundation::CloseHandle;
@@ -19,7 +19,7 @@ const DRIVER_NAME: &str = "IOCP";
 
 pub struct DriverIOCP {
     iocp: HANDLE,
-    waker: DriverWaker,
+    waker: Event,
     config: DriverConfig,
     buffer: [OVERLAPPED_ENTRY; BUFFER_SIZE],
 }
@@ -30,7 +30,7 @@ impl DriverIOCP {
         real_config.attach_handle = INVALID_HANDLE_VALUE as usize;
         real_config.max_number_of_fd_hint = num::clamp(config.max_number_of_fd_hint, 1, 1000000);
         real_config.max_number_of_threads = num::clamp(config.max_number_of_fd_hint, 0, 65536);
-        let waker = DriverWaker::new()?;
+        let waker = Event::new()?;
 
         let iocp = {
             let iocp = unsafe {

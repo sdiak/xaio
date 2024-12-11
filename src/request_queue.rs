@@ -4,7 +4,6 @@ use std::sync::atomic::Ordering;
 
 use crate::sys::Event;
 
-use crate::driver_waker::DriverWaker;
 use crate::{request, ReadyList, Request};
 
 pub(crate) struct RequestQueue {

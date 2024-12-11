@@ -23,17 +23,6 @@ pub use socket::RawSocketFd;
 mod sys;
 pub use sys::*;
 
-#[cfg_attr(
-    any(target_os = "linux", target_os = "freebsd"),
-    path = "driver_waker_eventfd.rs"
-)]
-#[cfg_attr(
-    not(any(target_os = "linux", target_os = "freebsd", target_os = "windows")),
-    path = "driver_waker_pipe.rs"
-)]
-#[cfg_attr(target_os = "windows", path = "driver_waker_windows.rs")]
-mod driver_waker;
-
 mod utils;
 pub(crate) use utils::*;
 

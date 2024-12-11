@@ -1,6 +1,6 @@
 use crate::{
-    driver_waker::DriverWaker, libc_close_log_on_error, saturating_opt_duration_to_timespec,
-    DriverConfig, DriverFlags, DriverHandle, DriverIFace, Request,
+    libc_close_log_on_error, saturating_opt_duration_to_timespec, sys::Event, DriverConfig,
+    DriverFlags, DriverHandle, DriverIFace, Request,
 };
 use std::io::{Error, ErrorKind, Result};
 
@@ -12,14 +12,14 @@ const DRIVER_NAME: &str = "EPoll";
 #[derive(Debug)]
 pub struct DriverEPoll {
     epollfd: libc::c_int,
-    waker: DriverWaker,
+    waker: Event,
     config: DriverConfig,
     buffer: [libc::epoll_event; BUFFER_SIZE],
 }
 
 impl DriverEPoll {
     pub(crate) fn new(config: &DriverConfig) -> Result<Self> {
-        let waker = DriverWaker::new()?;
+        let waker = Event::new()?;
         let mut real_config: DriverConfig =
             unsafe { std::mem::MaybeUninit::zeroed().assume_init() };
         real_config.flags =
@@ -106,7 +106,7 @@ impl DriverIFace for DriverEPoll {
     }
     #[inline]
     fn wake(&self) -> std::io::Result<()> {
-        self.waker.wake()
+        self.waker.notify()
     }
     #[inline]
     fn get_native_handle(&self) -> DriverHandle {
