@@ -23,7 +23,7 @@ pub(crate) fn libc_close_log_on_error(fd: libc::c_int) {
 #[cfg(target_family = "unix")]
 #[allow(dead_code)]
 pub(crate) fn libc_read_all(fd: libc::c_int, buf: &mut [u8], block_on_eagain: bool) -> Result<()> {
-    let mut file = unsafe { File::from_raw_fd(fd) };
+    let mut file = std::mem::ManuallyDrop::new(unsafe { File::from_raw_fd(fd) });
     let mut done = 0;
     let todo = buf.len();
     while done < todo {
@@ -57,7 +57,7 @@ pub(crate) fn libc_read_all(fd: libc::c_int, buf: &mut [u8], block_on_eagain: bo
 #[cfg(target_family = "unix")]
 #[allow(dead_code)]
 pub(crate) fn libc_write_all(fd: libc::c_int, buf: &[u8], block_on_eagain: bool) -> Result<()> {
-    let mut file = unsafe { File::from_raw_fd(fd) };
+    let mut file = std::mem::ManuallyDrop::new(unsafe { File::from_raw_fd(fd) });
     let mut done = 0;
     let todo = buf.len();
     while done < todo {

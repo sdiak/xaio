@@ -1,20 +1,21 @@
+use std::io::Result;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
-use std::time;
 
+use crate::driver_waker::DriverWaker;
 use crate::{request, ReadyList, Request};
-
-const PARK_BIT: usize = 1usize;
 
 pub(crate) struct RequestQueue {
     tail: AtomicUsize,
+    waker: DriverWaker,
 }
 
 impl RequestQueue {
-    pub(crate) fn new() -> RequestQueue {
-        RequestQueue {
+    pub(crate) fn new() -> Result<RequestQueue> {
+        Ok(RequestQueue {
             tail: AtomicUsize::new(0usize),
-        }
+            waker: DriverWaker::new()?,
+        })
     }
 
     /// Adds a new completed request to the given concurrent queue.
@@ -29,7 +30,7 @@ impl RequestQueue {
         (*req).list_set_next(std::ptr::null_mut(), Ordering::Relaxed);
         let mut old_tail = self.tail.load(Ordering::Acquire);
         loop {
-            (*req).list_update_next((old_tail & !PARK_BIT) as _, Ordering::Relaxed);
+            (*req).list_update_next(old_tail as _, Ordering::Relaxed);
             match self.tail.compare_exchange_weak(
                 old_tail,
                 req as usize,
@@ -37,8 +38,8 @@ impl RequestQueue {
                 Ordering::Acquire,
             ) {
                 Ok(_) => {
-                    if (old_tail & PARK_BIT) != 0 { // old_tail == 0 || (old_tail & PARK_BIT) != 0
-                         // TODO: notify
+                    if old_tail == 0 {
+                        self.waker.wake().expect("Unrecoverable error");
                     }
                     return;
                 }
@@ -59,29 +60,11 @@ impl RequestQueue {
     ///   `timeout_ms` or `0` when some request are already available.
     ///   The caller should use it like so : `timeout_ms = request_queue.park_begin(timeout_ms);`
     pub(crate) unsafe fn park_begin(&self, timeout_ms: i32) -> i32 {
-        let timeout_ms = timeout_ms as u32; // negative number becomes larger than i32::MAX (two’s complement)
-        if timeout_ms > 0 {
-            loop {
-                match self.tail.compare_exchange_weak(
-                    0,
-                    PARK_BIT,
-                    Ordering::Release,
-                    Ordering::Relaxed,
-                ) {
-                    Ok(_) => {
-                        return timeout_ms as i32;
-                    }
-                    Err(current) => {
-                        if current != 0usize {
-                            // At least one ready requests is available ; do not wait
-                            return 0i32;
-                        }
-                        // LCOV_EXCL_LINE : spurious failure, I do not know how to produce them in tests
-                    }
-                }
-            }
+        if self.tail.load(Ordering::Relaxed) != 0 {
+            0
+        } else {
+            timeout_ms
         }
-        0i32
     }
 
     /// Ends park
@@ -94,7 +77,7 @@ impl RequestQueue {
     pub(crate) unsafe fn park_end(&self, ready_list: &mut ReadyList) -> i32 {
         let mut count = 0i32;
         if self.tail.load(Ordering::Relaxed) != 0 {
-            let tail: *mut Request = (self.tail.swap(0, Ordering::Acquire) & !PARK_BIT) as _;
+            let tail: *mut Request = self.tail.swap(0, Ordering::Acquire) as _;
             if !tail.is_null() {
                 let len_before = ready_list.len();
                 ready_list.push_back_all(&mut RequestQueue::reverse_list(tail));
@@ -141,7 +124,7 @@ mod test {
         let mut a = Request::default();
         let mut b = Request::default();
         let mut c = Request::default();
-        let mut rq = RequestQueue::new();
+        let mut rq = RequestQueue::new().expect("Test can not run if that failed");
         let mut ready = ReadyList::new();
         unsafe {
             rq.push(&mut a as *mut Request);
@@ -170,7 +153,7 @@ mod test {
         let mut b = Request::default();
         let mut c = Request::default();
         let mut d = Request::default();
-        let mut rq = RequestQueue::new();
+        let mut rq = RequestQueue::new().expect("Test can not run if that failed");
         let mut ready = ReadyList::new();
         {
             assert_eq!(unsafe { rq.park_begin(i32::MAX) }, i32::MAX);
@@ -213,7 +196,7 @@ mod test {
         let t1_data: Vec<Request> = (0..1024).map(|_| Request::default()).collect();
         let expected = t0_data.len() + t1_data.len();
         let mut ready = ReadyList::new();
-        let rq = Arc::new(RequestQueue::new());
+        let rq = Arc::new(RequestQueue::new().expect("Test can not run if that failed"));
         let rq0 = rq.clone();
         let rq1 = rq.clone();
         let t0 = thread::spawn(move || {
@@ -234,7 +217,8 @@ mod test {
         });
 
         while ready.len() < expected {
-            let timeout = unsafe { rq.park_begin(i32::MAX) };
+            let timeout_ms = unsafe { rq.park_begin(i32::MAX) };
+            rq.waker.wait(timeout_ms);
             unsafe { rq.park_end(&mut ready) };
         }
 

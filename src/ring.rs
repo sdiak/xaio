@@ -80,7 +80,7 @@ impl RingInner {
             epoch: *EPOCH,
             now_ms: EPOCH.elapsed().as_millis() as u64, // SAFETY: program is not expected to run more than ~ 2.5e+13 years
             driver,
-            concurrent: RequestQueue::new(),
+            concurrent: RequestQueue::new()?,
             ready: ReadyList::new(),
             timeouts: TimerHeap::new(timer_capacity)?,
             _unsync: PhantomUnsync {},
