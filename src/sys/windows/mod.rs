@@ -1,7 +1,6 @@
 mod event;
 pub use event::*;
 mod iocp;
-pub use iocp::*;
 
 use std::{
     ffi::CStr,
