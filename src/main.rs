@@ -1,12 +1,26 @@
 use std::fmt::Debug;
 use std::io::Error;
 
-use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
+// use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
 use windows_sys::Win32::{
-    Foundation::{BOOLEAN, GENERIC_ALL, HANDLE, INVALID_HANDLE_VALUE},
+    Foundation::{BOOLEAN, GENERIC_ALL, HANDLE, HMODULE, INVALID_HANDLE_VALUE},
     System::IO::CreateIoCompletionPort,
 };
 use xaio::sys::Event;
+
+#[link(name = "kernel32")]
+#[no_mangle]
+extern "stdcall" {
+    fn GetLastError() -> u32;
+    fn LoadLibraryExW(
+        lpLibFileName: *const u16,
+        hFile: *const libc::c_void,
+        dwFlags: u32,
+    ) -> *const libc::c_void;
+    // fn FreeLibrary(hLibModule: *const c_void) -> i32;
+    fn GetProcAddress(hModule: *const libc::c_void, lpProcName: *const u8) -> *const libc::c_void;
+}
+
 // #[link(name = "kernel32")]
 // #[link(name = "user32")]
 // extern "stdcall" {
@@ -20,6 +34,10 @@ use xaio::sys::Event;
 //         AlreadySignaled: *mut BOOLEAN,
 //     ) -> NTSTATUS;
 // }
+
+struct WinLib {
+    handle: HMODULE,
+}
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -63,21 +81,67 @@ type NtCreateWaitCompletionPacket = extern "stdcall" fn(
     ObjectAttributes: *mut libc::c_void,
 ) -> NtStatus;
 
+type FnMessageBox = extern "stdcall" fn(
+    hWnd: *const libc::c_void,
+    lpText: *const u16,
+    lpCaption: *const u16,
+    uType: u32,
+) -> i32;
+
+trait IntoNullTerminatedU16 {
+    fn to_nullterminated_u16(&self) -> Vec<u16>;
+}
+
+impl IntoNullTerminatedU16 for str {
+    fn to_nullterminated_u16(&self) -> Vec<u16> {
+        self.encode_utf16().chain(Some(0)).collect()
+    }
+}
+
 pub fn main() {
+    let user32dll = unsafe {
+        LoadLibraryExW(
+            "user32.dll".to_nullterminated_u16().as_ptr(),
+            std::ptr::null(),
+            0x800,
+        )
+    };
+    assert!(!user32dll.is_null());
+    let fn_message_box = unsafe { GetProcAddress(user32dll, "MessageBoxW\0".as_ptr() as _) };
+    println!("{fn_message_box:?}");
+    let fn_message_box = unsafe { std::mem::transmute::<_, FnMessageBox>(fn_message_box) };
+    let r = fn_message_box(
+        std::ptr::null(),
+        "Hello, Rust!".to_nullterminated_u16().as_ptr(),
+        "MessageBox".to_nullterminated_u16().as_ptr(),
+        0,
+    );
+    println!("fn_message_box => {r}");
+
     let ev = Event::new().unwrap();
 
-    let ntdll = unsafe { LoadLibraryA(c"ntdll.dll".as_ptr() as _) };
+    let ntdll = unsafe {
+        LoadLibraryExW(
+            "ntdll.dll".to_nullterminated_u16().as_ptr(),
+            std::ptr::null(),
+            0x800,
+        )
+    };
     assert!(!ntdll.is_null());
 
     let nt_associate_wait_completion_packet =
-        unsafe { GetProcAddress(ntdll, c"NtAssociateWaitCompletionPacket".as_ptr() as _) }.unwrap();
-    let nt_associate_wait_completion_packet: NtAssociateWaitCompletionPacket =
-        unsafe { std::mem::transmute(nt_associate_wait_completion_packet) };
+        unsafe { GetProcAddress(ntdll, c"NtAssociateWaitCompletionPacket".as_ptr() as _) };
+    let nt_associate_wait_completion_packet = unsafe {
+        std::mem::transmute::<_, NtAssociateWaitCompletionPacket>(
+            nt_associate_wait_completion_packet,
+        )
+    };
 
     let nt_create_wait_completion_packet =
-        unsafe { GetProcAddress(ntdll, c"NtCreateWaitCompletionPacket".as_ptr() as _) }.unwrap();
-    let nt_create_wait_completion_packet: NtCreateWaitCompletionPacket =
-        unsafe { std::mem::transmute(nt_associate_wait_completion_packet) };
+        unsafe { GetProcAddress(ntdll, c"NtCreateWaitCompletionPacket".as_ptr() as _) };
+    let nt_create_wait_completion_packet = unsafe {
+        std::mem::transmute::<_, NtCreateWaitCompletionPacket>(nt_associate_wait_completion_packet)
+    };
 
     let iocp = unsafe { CreateIoCompletionPort(INVALID_HANDLE_VALUE, std::ptr::null_mut(), 0, 0) };
     assert!(iocp != INVALID_HANDLE_VALUE);
