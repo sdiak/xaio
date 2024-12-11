@@ -1,7 +1,8 @@
-use crate::{libc_read_all, libc_write_all, selector::rawpoll};
-
-use super::libc_close_log_on_error;
-use std::io::{Error, ErrorKind, Result};
+use crate::{libc_close_log_on_error, libc_read_all, libc_write_all, selector::rawpoll};
+use std::{
+    io::{Error, ErrorKind, Result},
+    sync::Arc,
+};
 
 /// An event can be used as an event wait/notify mechanism by user-space applications, and by the kernel to notify user-space applications of events.
 ///
@@ -32,8 +33,8 @@ impl Clone for Event {
 
 impl Event {
     pub fn new() -> Result<Self> {
-        let evfd = unsafe { libc::eventfd(0, libc::EFD_CLOEXEC | libc::EFD_NONBLOCK) };
-        if evfd >= 0 {
+        let fd = unsafe { libc::eventfd(0, libc::EFD_CLOEXEC | libc::EFD_NONBLOCK) };
+        if fd >= 0 {
             Ok(Self {
                 handle: Arc::new(Inner { fd }),
             })
@@ -54,7 +55,7 @@ impl Event {
 
     /// Waits for the event to be notified or for `timeout_ms` milliseconds
     pub fn wait(&self, timeout_ms: i32) -> Result<()> {
-        let fd = self.native_handle();
+        let fd = (*self.handle).fd;
         let mut buffer = 0u64.to_ne_bytes();
         let pollfd = &mut [rawpoll::PollFD {
             fd: fd,
@@ -63,8 +64,7 @@ impl Event {
         }];
         loop {
             match libc_read_all(fd, &mut buffer, false) {
-                Ok(len) => {
-                    debug_assert!(len == std::mem::sizeof::<buffer>());
+                Ok(_) => {
                     return Ok(());
                 }
                 Err(err) if err.kind() == ErrorKind::WouldBlock => {

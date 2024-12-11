@@ -70,6 +70,45 @@ pub(crate) fn libc_read_all(fd: libc::c_int, buf: &mut [u8], block_on_eagain: bo
 
 #[cfg(target_family = "unix")]
 #[allow(dead_code)]
+pub(crate) fn libc_read(fd: libc::c_int, buf: &mut [u8], block_on_eagain: bool) -> Result<usize> {
+    let mut file = std::mem::ManuallyDrop::new(unsafe { File::from_raw_fd(fd) });
+    let mut done = 0;
+    let todo = buf.len();
+    while done < todo {
+        match file.read(&mut buf[done..]) {
+            Ok(n) => {
+                done += n;
+                if n == 0 && done != 0 {
+                    return Ok(done);
+                }
+            }
+            Err(e) => match e.kind() {
+                ErrorKind::WouldBlock => {
+                    if block_on_eagain && done == 0 {
+                        let pollfd = &mut [rawpoll::PollFD {
+                            fd,
+                            events: rawpoll::POLLIN,
+                            revents: 0 as _,
+                        }];
+                        rawpoll::sys_poll(pollfd, 5000)?;
+                    } else if done != 0 {
+                        return Ok(done);
+                    } else {
+                        return Err(e);
+                    }
+                }
+                ErrorKind::Interrupted => {}
+                _ => {
+                    return Err(e);
+                }
+            },
+        }
+    }
+    Ok(done)
+}
+
+#[cfg(target_family = "unix")]
+#[allow(dead_code)]
 pub(crate) fn libc_write_all(fd: libc::c_int, buf: &[u8], block_on_eagain: bool) -> Result<()> {
     let mut file = std::mem::ManuallyDrop::new(unsafe { File::from_raw_fd(fd) });
     let mut done = 0;
