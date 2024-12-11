@@ -7,6 +7,8 @@ use std::io::{Error, ErrorKind, Result};
 const BUFFER_SIZE: usize = 256usize;
 const DRIVER_NAME: &str = "EPoll";
 
+//https://doc.rust-lang.org/stable/core/mem/union.MaybeUninit.html#initializing-an-array-element-by-element
+
 #[derive(Debug)]
 pub struct DriverEPoll {
     epollfd: libc::c_int,
