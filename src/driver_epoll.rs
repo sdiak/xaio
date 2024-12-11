@@ -14,7 +14,6 @@ pub struct DriverEPoll {
     epollfd: libc::c_int,
     waker: Event,
     config: DriverConfig,
-    buffer: [libc::epoll_event; BUFFER_SIZE],
 }
 
 impl DriverEPoll {
@@ -52,7 +51,6 @@ impl DriverEPoll {
             epollfd,
             waker,
             config: real_config,
-            buffer: unsafe { std::mem::MaybeUninit::zeroed().assume_init() },
         })
     }
     fn process_events(&mut self, nevents: usize) -> i32 {
@@ -90,11 +88,13 @@ impl DriverIFace for DriverEPoll {
         timeout_ms: i32,
         _ready_list: &mut crate::RequestList,
     ) -> std::io::Result<i32> {
+        let mut buffer: [libc::epoll_event; 64] =
+            unsafe { std::mem::MaybeUninit::zeroed().assume_init() };
         let n_events = unsafe {
             libc::epoll_pwait(
                 self.epollfd,
-                self.buffer.as_mut_ptr(),
-                BUFFER_SIZE as libc::c_int,
+                buffer.as_mut_ptr(),
+                buffer.len() as _,
                 timeout_ms,
                 std::ptr::null(),
             )

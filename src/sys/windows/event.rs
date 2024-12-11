@@ -48,7 +48,7 @@ impl Event {
     }
     /// Notify a waiter (multiple notification may be coalesced into one)
     pub fn notify(&self) -> Result<()> {
-        if unsafe { SetEvent(self.native_handle()) } != 0 {
+        if unsafe { SetEvent(self.get_native_handle()) } != 0 {
             Ok(())
         } else {
             Err(Error::last_os_error())
@@ -56,7 +56,7 @@ impl Event {
     }
 
     #[inline]
-    pub unsafe fn native_handle(&self) -> HANDLE {
+    pub unsafe fn get_native_handle(&self) -> HANDLE {
         (*self.handle).handle
     }
 
@@ -67,7 +67,7 @@ impl Event {
         } else {
             timeout_ms as u32
         };
-        match unsafe { WaitForSingleObject(self.native_handle(), timeout_ms) } {
+        match unsafe { WaitForSingleObject(self.get_native_handle(), timeout_ms) } {
             WAIT_OBJECT_0 => Ok(()),
             WAIT_TIMEOUT => Err(Error::from(ErrorKind::TimedOut)),
             WAIT_ABANDONED => panic!(

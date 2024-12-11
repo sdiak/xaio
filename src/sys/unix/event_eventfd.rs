@@ -49,7 +49,7 @@ impl Event {
     }
 
     #[inline]
-    pub(crate) unsafe fn native_handle(&self) -> libc::c_int {
+    pub(crate) unsafe fn get_native_handle(&self) -> libc::c_int {
         (*self.handle).fd
     }
 
