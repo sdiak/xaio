@@ -56,7 +56,7 @@ impl Event {
     }
 
     #[inline]
-    pub(crate) unsafe fn native_handle(&self) -> HANDLE {
+    pub unsafe fn native_handle(&self) -> HANDLE {
         (*self.handle).handle
     }
 

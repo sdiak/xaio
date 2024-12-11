@@ -20,7 +20,7 @@ pub use request_list::*;
 pub use ring::*;
 pub use socket::RawSocketFd;
 
-mod sys;
+pub mod sys;
 pub use sys::*;
 
 mod utils;
