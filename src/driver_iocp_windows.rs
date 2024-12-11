@@ -138,7 +138,7 @@ impl DriverIFace for DriverIOCP {
     }
     #[inline]
     fn wake(&self) -> Result<()> {
-        self.waker.wake()
+        self.waker.notify()
     }
     #[inline]
     fn get_native_handle(&self) -> DriverHandle {
