@@ -1,12 +1,29 @@
-use std::fmt::Debug;
-use std::io::Error;
+use std::io::{Error, ErrorKind};
+use std::mem::zeroed;
+use std::{fmt::Debug, mem::MaybeUninit};
 
+use windows_sys::Win32::System::IO::GetQueuedCompletionStatusEx;
 // use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
 use windows_sys::Win32::{
     Foundation::{BOOLEAN, GENERIC_ALL, HANDLE, HMODULE, INVALID_HANDLE_VALUE},
-    System::IO::CreateIoCompletionPort,
+    System::IO::{CreateIoCompletionPort, OVERLAPPED_ENTRY},
 };
 use xaio::sys::Event;
+
+#[derive(Clone, Copy)]
+pub struct OverlappedEntry(OVERLAPPED_ENTRY);
+
+impl Debug for OverlappedEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!(
+            "OverlappedEntry(internal:{:?}, status:{:?}, key:{:?}, overlapped:{:?})",
+            self.0.Internal,
+            self.0.dwNumberOfBytesTransferred,
+            self.0.lpCompletionKey,
+            self.0.lpOverlapped
+        ))
+    }
+}
 
 #[link(name = "kernel32")]
 #[no_mangle]
@@ -110,13 +127,13 @@ pub fn main() {
     let fn_message_box = unsafe { GetProcAddress(user32dll, "MessageBoxW\0".as_ptr() as _) };
     println!("{fn_message_box:?}");
     let fn_message_box = unsafe { std::mem::transmute::<_, FnMessageBox>(fn_message_box) };
-    let r = fn_message_box(
-        std::ptr::null(),
-        "Hello, Rust!".to_nullterminated_u16().as_ptr(),
-        "MessageBox".to_nullterminated_u16().as_ptr(),
-        0,
-    );
-    println!("fn_message_box => {r}");
+    // let r = fn_message_box(
+    //     std::ptr::null(),
+    //     "Hello, Rust!".to_nullterminated_u16().as_ptr(),
+    //     "MessageBox".to_nullterminated_u16().as_ptr(),
+    //     0,
+    // );
+    // println!("fn_message_box => {r}");
 
     let ev = Event::new().unwrap();
 
@@ -130,7 +147,7 @@ pub fn main() {
     assert!(!ntdll.is_null());
 
     let nt_associate_wait_completion_packet =
-        unsafe { GetProcAddress(ntdll, c"NtAssociateWaitCompletionPacket".as_ptr() as _) };
+        unsafe { GetProcAddress(ntdll, "NtAssociateWaitCompletionPacket\0".as_ptr() as _) };
     let nt_associate_wait_completion_packet = unsafe {
         std::mem::transmute::<_, NtAssociateWaitCompletionPacket>(
             nt_associate_wait_completion_packet,
@@ -138,15 +155,15 @@ pub fn main() {
     };
 
     let nt_create_wait_completion_packet =
-        unsafe { GetProcAddress(ntdll, c"NtCreateWaitCompletionPacket".as_ptr() as _) };
+        unsafe { GetProcAddress(ntdll, "NtCreateWaitCompletionPacket\0".as_ptr() as _) };
     let nt_create_wait_completion_packet = unsafe {
-        std::mem::transmute::<_, NtCreateWaitCompletionPacket>(nt_associate_wait_completion_packet)
+        std::mem::transmute::<_, NtCreateWaitCompletionPacket>(nt_create_wait_completion_packet)
     };
 
     let iocp = unsafe { CreateIoCompletionPort(INVALID_HANDLE_VALUE, std::ptr::null_mut(), 0, 0) };
     assert!(iocp != INVALID_HANDLE_VALUE);
 
-    let mut completion_paquet: HANDLE = INVALID_HANDLE_VALUE;
+    let mut completion_paquet: HANDLE = std::ptr::null_mut();
     let r = unsafe {
         nt_create_wait_completion_packet(
             &mut completion_paquet,
@@ -158,7 +175,7 @@ pub fn main() {
         "nt_create_wait_completion_packet => {:?} (succ:{}, info:{}, is_warning:{}, is_err:{})",
         r,
         r.is_success(),
-        r.is_success(),
+        r.is_information(),
         r.is_warning(),
         r.is_error()
     );
@@ -169,7 +186,7 @@ pub fn main() {
             iocp,
             ev.native_handle(),
             std::ptr::null_mut() as _,
-            std::ptr::null_mut() as _,
+            0x40000000u32 as _,
             NtStatus { bits: 0 },
             2 as _,
             std::ptr::null_mut() as _,
@@ -179,7 +196,7 @@ pub fn main() {
         "nt_associate_wait_completion_packet => {:?} (succ:{}, info:{}, is_warning:{}, is_err:{})",
         r,
         r.is_success(),
-        r.is_success(),
+        r.is_information(),
         r.is_warning(),
         r.is_error()
     );
@@ -187,6 +204,74 @@ pub fn main() {
         let e = Error::last_os_error();
         println!(" - {}", e);
     }
+
+    let mut buffer: [OverlappedEntry; 5] =
+        [unsafe { std::mem::MaybeUninit::zeroed().assume_init() }; 5];
+    let mut nentries: u32 = 0;
+    let r = unsafe {
+        GetQueuedCompletionStatusEx(
+            iocp,
+            buffer.as_mut_ptr() as _,
+            buffer.len() as _,
+            &mut nentries as _,
+            100 as _,
+            0,
+        )
+    };
+    assert!(r != 0 || Error::last_os_error().kind() == ErrorKind::TimedOut);
+
+    ev.notify().unwrap();
+
+    let r = unsafe {
+        GetQueuedCompletionStatusEx(
+            iocp,
+            buffer.as_mut_ptr() as _,
+            buffer.len() as _,
+            &mut nentries as _,
+            1000 as _,
+            0,
+        )
+    };
+    assert!(r != 0 && nentries == 1);
+    println!("message: {:?}", buffer[0usize]);
+
+    ev.notify().unwrap();
+    let r = unsafe {
+        GetQueuedCompletionStatusEx(
+            iocp,
+            buffer.as_mut_ptr() as _,
+            buffer.len() as _,
+            &mut nentries as _,
+            100 as _,
+            0,
+        )
+    };
+    assert!(r != 0 || Error::last_os_error().kind() == ErrorKind::TimedOut);
+
+    unsafe {
+        nt_associate_wait_completion_packet(
+            completion_paquet,
+            iocp,
+            ev.native_handle(),
+            std::ptr::null_mut() as _,
+            0xCAFEBABEu32 as _,
+            NtStatus { bits: 0 },
+            42 as _,
+            std::ptr::null_mut() as _,
+        );
+    }
+    let r = unsafe {
+        GetQueuedCompletionStatusEx(
+            iocp,
+            buffer.as_mut_ptr() as _,
+            buffer.len() as _,
+            &mut nentries as _,
+            1000 as _,
+            0,
+        )
+    };
+    assert!(r != 0 && nentries == 1);
+    println!("message: {:?}", buffer[0usize]);
 
     windows_close_handle_log_on_error(iocp);
 }
