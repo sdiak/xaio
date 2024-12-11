@@ -20,6 +20,9 @@ pub use request_list::*;
 pub use ring::*;
 pub use socket::RawSocketFd;
 
+mod sys;
+pub use sys::*;
+
 #[cfg_attr(
     any(target_os = "linux", target_os = "freebsd"),
     path = "driver_waker_eventfd.rs"

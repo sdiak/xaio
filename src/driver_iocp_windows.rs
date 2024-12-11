@@ -27,20 +27,12 @@ impl DriverIOCP {
     pub(crate) fn new(config: &DriverConfig) -> Result<Self> {
         let mut real_config: DriverConfig =
             unsafe { std::mem::MaybeUninit::zeroed().assume_init() };
-        real_config.flags = config.flags & (DriverFlags::ATTACH_HANDLE).bits();
         real_config.attach_handle = INVALID_HANDLE_VALUE as usize;
         real_config.max_number_of_fd_hint = num::clamp(config.max_number_of_fd_hint, 1, 1000000);
         real_config.max_number_of_threads = num::clamp(config.max_number_of_fd_hint, 0, 65536);
-        let iocp = if (real_config.flags & DriverFlags::ATTACH_HANDLE.bits()) != 0u32 {
-            // TODO: how to get the max_number_of_threads ?
-            let iocp: HANDLE = config.attach_handle as _;
-            if iocp == INVALID_HANDLE_VALUE {
-                return Err(Error::from(ErrorKind::InvalidInput));
-            }
-            real_config.flags = config.flags;
-            real_config.attach_handle = config.attach_handle;
-            iocp
-        } else {
+        let waker = DriverWaker::new()?;
+
+        let iocp = {
             let iocp = unsafe {
                 CreateIoCompletionPort(
                     INVALID_HANDLE_VALUE,
@@ -56,7 +48,7 @@ impl DriverIOCP {
         };
         Ok(Self {
             iocp,
-            waker: DriverWaker::new(iocp),
+            waker: waker,
             config: real_config,
             buffer: unsafe { std::mem::MaybeUninit::zeroed().assume_init() },
         })

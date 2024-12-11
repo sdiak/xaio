@@ -1,6 +1,9 @@
-use std::io::{Error, Result};
-use windows_sys::Win32::Foundation::{HANDLE, INVALID_HANDLE_VALUE};
-use windows_sys::Win32::System::IO::PostQueuedCompletionStatus;
+use std::io::{Error, ErrorKind, Result};
+use windows_sys::Win32::Foundation::{
+    HANDLE, INVALID_HANDLE_VALUE, WAIT_ABANDONED, WAIT_OBJECT_0, WAIT_TIMEOUT,
+};
+use windows_sys::Win32::System::Threading::{CreateEventA, SetEvent, WaitForSingleObject};
+use windows_sys::Win32::System::IO::{CreateIoCompletionPort, PostQueuedCompletionStatus};
 pub(crate) struct DriverWaker {
     handle: HANDLE,
 }
@@ -15,8 +18,7 @@ See example here: https://github.com/tringi/win32-iocp-events
  */
 impl DriverWaker {
     pub(crate) fn new() -> Result<Self> {
-        let handle =
-            unsafe { CreateIoCompletionPort(INVALID_HANDLE_VALUE, std::ptr::null_mut(), 0, 0) };
+        let handle = unsafe { CreateEventA(std::ptr::null() as _, 0, 0, std::ptr::null() as _) };
         if handle.is_null() {
             Err(Error::last_os_error())
         } else {
@@ -24,15 +26,7 @@ impl DriverWaker {
         }
     }
     pub(crate) fn wake(&self) -> Result<()> {
-        if unsafe {
-            PostQueuedCompletionStatus(
-                self.handle,
-                0,
-                super::driver_iocp_windows::WAKE_TOKEN,
-                std::ptr::null_mut(),
-            )
-        } != 0
-        {
+        if unsafe { SetEvent(self.handle) } != 0 {
             Ok(())
         } else {
             Err(Error::last_os_error())
@@ -44,5 +38,23 @@ impl DriverWaker {
     }
     #[inline]
     pub(crate) fn drain(&self) {}
-    pub(crate) fn wait(&self, timeout_ms: i32) {}
+    pub(crate) fn wait(&self, timeout_ms: i32) -> bool {
+        let timeout_ms = if timeout_ms < 0 {
+            0xFFFFFFFFu32
+        } else {
+            timeout_ms as u32
+        };
+        match unsafe { WaitForSingleObject(self.handle, timeout_ms) } {
+            WAIT_OBJECT_0 => true,
+            WAIT_TIMEOUT => false,
+            WAIT_ABANDONED => panic!("Event handle is seen as a Mutex handle"),
+            _ => {
+                log::warn!(
+                    "Unexepected error in `DriverWaker::wait(&self, timeout_ms={timeout_ms}): {}",
+                    Error::last_os_error()
+                );
+                false
+            }
+        }
+    }
 }

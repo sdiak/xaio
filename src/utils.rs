@@ -20,6 +20,20 @@ pub(crate) fn libc_close_log_on_error(fd: libc::c_int) {
     }
 }
 
+#[cfg(target_family = "windows")]
+#[allow(dead_code)]
+pub(crate) fn windows_close_handle_log_on_error(handle: windows_sys::Win32::Foundation::HANDLE) {
+    if handle != windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE
+        && unsafe { windows_sys::Win32::Foundation::CloseHandle(handle) } == 0
+    {
+        log::warn!(
+            "windows::CloseHandle({:?}) failed: {:?}",
+            handle,
+            std::io::Error::last_os_error()
+        );
+    }
+}
+
 #[cfg(target_family = "unix")]
 #[allow(dead_code)]
 pub(crate) fn libc_read_all(fd: libc::c_int, buf: &mut [u8], block_on_eagain: bool) -> Result<()> {

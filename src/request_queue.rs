@@ -2,19 +2,21 @@ use std::io::Result;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
+use crate::sys::Event;
+
 use crate::driver_waker::DriverWaker;
 use crate::{request, ReadyList, Request};
 
 pub(crate) struct RequestQueue {
     tail: AtomicUsize,
-    waker: DriverWaker,
+    waker: Event,
 }
 
 impl RequestQueue {
     pub(crate) fn new() -> Result<RequestQueue> {
         Ok(RequestQueue {
             tail: AtomicUsize::new(0usize),
-            waker: DriverWaker::new()?,
+            waker: Event::new()?,
         })
     }
 
@@ -39,7 +41,7 @@ impl RequestQueue {
             ) {
                 Ok(_) => {
                     if old_tail == 0 {
-                        self.waker.wake().expect("Unrecoverable error");
+                        self.waker.notify().expect("Unrecoverable error");
                     }
                     return;
                 }
