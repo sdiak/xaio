@@ -23,6 +23,7 @@ pub use socket::RawSocketFd;
 pub mod sys;
 pub use sys::*;
 
+pub use socket::*;
 mod utils;
 pub(crate) use utils::*;
 

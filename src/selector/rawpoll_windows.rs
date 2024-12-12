@@ -1,7 +1,9 @@
 use std::fmt::Write;
 
 use windows_sys::Win32::Networking::WinSock::{WSAPoll, WSAPOLLFD};
-pub use windows_sys::Win32::Networking::WinSock::{POLLERR, POLLHUP, POLLIN, POLLOUT, POLLPRI};
+pub use windows_sys::Win32::Networking::WinSock::{
+    POLLERR, POLLHUP, POLLIN, POLLOUT, POLLPRI, SOCKET_ERROR,
+};
 
 use crate::selector::Interest;
 use crate::RawSocketFd;
@@ -96,8 +98,8 @@ impl std::fmt::Debug for PollFD {
 
 pub fn sys_poll(pfd: &mut [PollFD], timeout: libc::c_int) -> std::io::Result<usize> {
     let poll_result = unsafe { WSAPoll(pfd.as_mut_ptr() as _, pfd.len() as _, timeout as _) };
-    if poll_result < 0 {
-        Err(std::io::Error::last_os_error().into())
+    if poll_result == SOCKET_ERROR {
+        Err(std::io::Error::last_os_error())
     } else {
         Ok(poll_result as usize)
     }

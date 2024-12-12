@@ -1,21 +1,51 @@
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::{FxBuildHasher, FxHashMap};
 
-use crate::selector::rawpoll::{sys_poll, PollFD, POLLERR, POLLHUP, POLLIN, POLLOUT, POLLPRI};
+use crate::selector::rawpoll::{sys_poll, PollFD};
 use crate::selector::Interest;
 use crate::RawSocketFd;
-use std::borrow::Borrow;
 use std::cell::RefCell;
+use std::fmt::Debug;
 use std::io::{Error, ErrorKind, Result};
-use std::sync::MutexGuard;
-use std::{
-    fmt::Debug,
-    sync::{Arc, Mutex},
-};
-
-use super::Event;
 
 pub struct Poll {
-    inner: Arc<Inner>,
+    inner: Inner,
+}
+impl Poll {
+    pub fn new(capacity: usize) -> Result<Self> {
+        Ok(Self {
+            inner: Inner::new(capacity)?,
+        })
+    }
+}
+
+impl crate::selector::SelectorImpl for Poll {
+    fn register(&self, fd: RawSocketFd, token: usize, interests: Interest) -> std::io::Result<()> {
+        self.inner
+            .register(fd, token, PollFD::interest_to_events(interests))
+    }
+    fn reregister(
+        &self,
+        fd: RawSocketFd,
+        token: usize,
+        interests: Interest,
+    ) -> std::io::Result<()> {
+        self.inner
+            .reregister(fd, token, PollFD::interest_to_events(interests))
+    }
+    fn unregister(&self, fd: RawSocketFd) -> std::io::Result<()> {
+        self.inner.unregister(fd)
+    }
+    fn select(
+        &self,
+        events: &mut Vec<crate::selector::Event>,
+        timeout_ms: i32,
+    ) -> std::io::Result<usize> {
+        if timeout_ms == 0 {
+            self.inner.wait(events, timeout_ms)
+        } else {
+            self.inner.poll(events)
+        }
+    }
 }
 
 struct PollFds {
@@ -23,10 +53,13 @@ struct PollFds {
     fds: Vec<PollFD>,
 }
 impl PollFds {
-    fn new(capacity: usize) -> PollFds {
-        Self {
+    fn new(capacity: usize) -> Result<Self> {
+        match std::panic::catch_unwind(|| Self {
             active_fds: 0usize,
             fds: Vec::with_capacity(capacity),
+        }) {
+            Ok(thiz) => Ok(thiz),
+            Err(_) => Err(Error::from(ErrorKind::OutOfMemory)),
         }
     }
     fn active_fds(&self) -> usize {
@@ -75,10 +108,7 @@ impl PollFds {
     }
 }
 
-impl Poll {}
-
 struct Inner {
-    waker: crate::sys::Event,
     /// sys_poll argument
     pollfds: RefCell<PollFds>,
     /// Index
@@ -87,9 +117,8 @@ struct Inner {
 impl Inner {
     fn new(capacity: usize) -> Result<Inner> {
         Ok(Self {
-            waker: crate::sys::Event::new()?,
-            registrations: RefCell::new(Registration::new(capacity)),
-            pollfds: RefCell::new(PollFds::new(capacity)),
+            registrations: RefCell::new(Registration::new(capacity)?),
+            pollfds: RefCell::new(PollFds::new(capacity)?),
         })
     }
     fn register(&self, fd: RawSocketFd, token: usize, interests: i16) -> Result<()> {
@@ -169,9 +198,8 @@ impl Inner {
             if n_events == 0 {
                 break;
             }
-            // TODO: waker !
             if pfd.revents() != 0 as _ {
-                events.push(Event {
+                events.push(crate::selector::Event {
                     events: PollFD::events_to_interest(pfd.revents()),
                     token: registrations.entries.get(&pfd.fd()).unwrap().token as _,
                 });
@@ -207,9 +235,15 @@ struct Registration {
     entries: FxHashMap<RawSocketFd, FdEntry>,
 }
 impl Registration {
-    fn new(capacity: usize) -> Self {
-        Self {
-            entries: FxHashMap::<RawSocketFd, FdEntry>::with_capacity_and_hasher(32, FxBuildHasher),
+    fn new(capacity: usize) -> Result<Self> {
+        match std::panic::catch_unwind(|| Self {
+            entries: FxHashMap::<RawSocketFd, FdEntry>::with_capacity_and_hasher(
+                capacity,
+                FxBuildHasher,
+            ),
+        }) {
+            Ok(thiz) => Ok(thiz),
+            Err(_) => Err(Error::from(ErrorKind::OutOfMemory)),
         }
     }
 }
