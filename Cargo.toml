@@ -16,7 +16,7 @@ bitflags = "2.6.0"
 log = "0.4.22"
 num = "0.4.3"
 rustc-hash = "2.1.0"
-socket2 = "0.5.8"
+socket2 = { version = "0.5.8", features = ["all"]}
 
 [dev-dependencies]
 rand = "0.8.5"

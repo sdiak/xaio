@@ -1,5 +1,6 @@
 use crate::{
     libc_close_log_on_error, libc_read_all, libc_write_all, selector::rawpoll, sys::EventCallBack,
+    RawSocketFd,
 };
 use std::{
     fmt::Debug,
@@ -72,11 +73,8 @@ impl Event {
     pub fn wait(&self, timeout_ms: i32) -> Result<()> {
         let fd = (*self.handle).fd;
         let mut buffer = 0u64.to_ne_bytes();
-        let pollfd = &mut [rawpoll::PollFD {
-            fd: fd,
-            events: rawpoll::POLLIN,
-            revents: 0 as _,
-        }];
+
+        let pollfd = &mut [rawpoll::PollFD::new(RawSocketFd::new(fd), rawpoll::POLLIN)];
         loop {
             match libc_read_all(fd, &mut buffer, false) {
                 Ok(_) => {

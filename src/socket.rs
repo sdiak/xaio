@@ -38,12 +38,20 @@ impl RawSocketFd {
     }
 }
 
-#[cfg(target_family = "windows")]
+#[cfg(target_family = "unix")]
 pub fn socketpair(
-    domain: socket2::Domain,
     typ: socket2::Type,
     protocol: Option<socket2::Protocol>,
 ) -> Result<(socket2::Socket, socket2::Socket)> {
+    socket2::Socket::pair(socket2::Domain::UNIX, typ, protocol)
+}
+
+#[cfg(target_family = "windows")]
+pub fn socketpair(
+    typ: socket2::Type,
+    protocol: Option<socket2::Protocol>,
+) -> Result<(socket2::Socket, socket2::Socket)> {
+    let domain = socket2::Domain::IPV4;
     match domain {
         socket2::Domain::IPV4 => {}
         _ => return Err(Error::from(ErrorKind::InvalidInput)),

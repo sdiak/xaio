@@ -276,8 +276,7 @@ pub fn main() {
 
     windows_close_handle_log_on_error(iocp);
 
-    let (mut a, mut b) =
-        xaio::socketpair(socket2::Domain::IPV4, socket2::Type::STREAM, None).unwrap();
+    let (mut a, mut b) = xaio::socketpair(socket2::Type::STREAM, None).unwrap();
     println!("({a:?}, {b:?})");
 
     let msg = ['a' as u8, 'b' as u8, 'c' as u8, 'd' as u8];

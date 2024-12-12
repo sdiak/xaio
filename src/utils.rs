@@ -1,4 +1,5 @@
 use super::selector::rawpoll;
+use crate::RawSocketFd;
 use std::{
     fs::File,
     io::{Error, ErrorKind, Read, Result, Write},
@@ -48,11 +49,8 @@ pub(crate) fn libc_read_all(fd: libc::c_int, buf: &mut [u8], block_on_eagain: bo
             Err(e) => match e.kind() {
                 ErrorKind::WouldBlock => {
                     if block_on_eagain {
-                        let pollfd = &mut [rawpoll::PollFD {
-                            fd,
-                            events: rawpoll::POLLIN,
-                            revents: 0 as _,
-                        }];
+                        let pollfd =
+                            &mut [rawpoll::PollFD::new(RawSocketFd::new(fd), rawpoll::POLLIN)];
                         rawpoll::sys_poll(pollfd, 5000)?;
                     } else {
                         return Err(e);
@@ -85,11 +83,8 @@ pub(crate) fn libc_read(fd: libc::c_int, buf: &mut [u8], block_on_eagain: bool) 
             Err(e) => match e.kind() {
                 ErrorKind::WouldBlock => {
                     if block_on_eagain && done == 0 {
-                        let pollfd = &mut [rawpoll::PollFD {
-                            fd,
-                            events: rawpoll::POLLIN,
-                            revents: 0 as _,
-                        }];
+                        let pollfd =
+                            &mut [rawpoll::PollFD::new(RawSocketFd::new(fd), rawpoll::POLLIN)];
                         rawpoll::sys_poll(pollfd, 5000)?;
                     } else if done != 0 {
                         return Ok(done);
@@ -121,11 +116,8 @@ pub(crate) fn libc_write_all(fd: libc::c_int, buf: &[u8], block_on_eagain: bool)
             Err(e) => match e.kind() {
                 ErrorKind::WouldBlock => {
                     if block_on_eagain {
-                        let pollfd = &mut [rawpoll::PollFD {
-                            fd,
-                            events: rawpoll::POLLOUT,
-                            revents: 0 as _,
-                        }];
+                        let pollfd =
+                            &mut [rawpoll::PollFD::new(RawSocketFd::new(fd), rawpoll::POLLOUT)];
                         rawpoll::sys_poll(pollfd, 5000)?;
                     } else {
                         return Err(e);

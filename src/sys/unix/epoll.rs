@@ -14,12 +14,12 @@ const _: () = assert!(
     std::mem::align_of::<crate::selector::Event>() >= std::mem::align_of::<libc::epoll_event>()
         && std::mem::size_of::<crate::selector::Event>()
             == std::mem::size_of::<libc::epoll_event>()
-        && Interest::READABLE.bits() == libc::EPOLLIN
-        && Interest::WRITABLE.bits() == libc::EPOLLOUT
-        && Interest::PRIORITY.bits() == libc::EPOLLPRI
-        && Interest::ERROR.bits() == libc::EPOLLERR
-        && Interest::HANG_UP.bits() == libc::EPOLLHUP
-        && Interest::RDHANG_UP.bits() == libc::EPOLLRDHUP
+        && Interest::READABLE.bits() == libc::EPOLLIN as u32
+        && Interest::WRITABLE.bits() == libc::EPOLLOUT as u32
+        && Interest::PRIORITY.bits() == libc::EPOLLPRI as u32
+        && Interest::ERROR.bits() == libc::EPOLLERR as u32
+        && Interest::HANG_UP.bits() == libc::EPOLLHUP as u32
+        && Interest::RDHANG_UP.bits() == libc::EPOLLRDHUP as u32
 );
 impl EPoll {
     pub fn new(close_on_exec: bool) -> Result<Self> {
