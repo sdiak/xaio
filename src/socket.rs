@@ -51,6 +51,10 @@ pub fn socketpair(
     typ: socket2::Type,
     protocol: Option<socket2::Protocol>,
 ) -> Result<(socket2::Socket, socket2::Socket)> {
+    /* TODO: try UNIX
+    https://devblogs.microsoft.com/commandline/af_unix-comes-to-windows/
+    https://github.com/rhysd/winver/blob/main/Cargo.toml detect > 10.??? and use UNIX
+    */
     let domain = socket2::Domain::IPV4;
     match domain {
         socket2::Domain::IPV4 => {}
