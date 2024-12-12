@@ -1,12 +1,11 @@
-
 #[cfg(not(target_os = "windows"))]
 use std::os::fd::RawFd as Inner;
 #[cfg(target_os = "windows")]
 use std::os::windows::raw::SOCKET as Inner;
 
-#[derive(Copy, PartialEq, Eq, Clone, PartialOrd, Ord, Hash)]
+#[derive(Debug, Copy, PartialEq, Eq, Clone, PartialOrd, Ord, Hash)]
 pub struct RawSocketFd {
-    pub(crate) inner: Inner
+    pub(crate) inner: Inner,
 }
 
 impl RawSocketFd {
@@ -16,11 +15,15 @@ impl RawSocketFd {
 
     #[cfg(not(target_os = "windows"))]
     pub fn invalid() -> Self {
-        Self { inner: -1i32 as Inner }
+        Self {
+            inner: -1i32 as Inner,
+        }
     }
     #[cfg(target_os = "windows")]
     pub fn invalid() -> Self {
-        Self { inner: windows_sys::Win32::Networking::WinSock::INVALID_SOCKET as _ }
+        Self {
+            inner: windows_sys::Win32::Networking::WinSock::INVALID_SOCKET as _,
+        }
     }
 
     #[cfg(not(target_os = "windows"))]

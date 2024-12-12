@@ -1,8 +1,9 @@
 use rustc_hash::FxHashMap;
 
 use crate::selector::rawpoll::{sys_poll, PollFD, POLLERR, POLLHUP, POLLIN, POLLOUT, POLLPRI};
+use crate::RawSocketFd;
 use std::{
-    os::fd::RawFd,
+    fmt::Debug,
     sync::{Arc, Mutex},
 };
 
@@ -26,7 +27,7 @@ struct Registration {
     /// sys_poll argument
     fds: Vec<PollFD>,
     /// maps an fd to its index in fds and it's associated token
-    data: FxHashMap<RawFd, FdEntry>,
+    data: FxHashMap<RawSocketFd, FdEntry>,
 }
 
 #[derive(Debug, Copy, Clone)]

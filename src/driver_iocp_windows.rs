@@ -23,6 +23,11 @@ pub struct DriverIOCP {
     config: DriverConfig,
     buffer: [OVERLAPPED_ENTRY; BUFFER_SIZE],
 }
+impl std::fmt::Debug for DriverIOCP {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("DriverIOCP(TODO:)")
+    }
+}
 impl DriverIOCP {
     pub(crate) fn new(config: &DriverConfig) -> Result<Self> {
         let mut real_config: DriverConfig =

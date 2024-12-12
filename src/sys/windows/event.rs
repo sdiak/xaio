@@ -12,8 +12,20 @@ use windows_sys::Win32::System::Threading::{CreateEventA, SetEvent, WaitForSingl
 pub struct Event {
     handle: Arc<Inner>,
 }
+impl std::hash::Hash for Event {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.handle.hash(state);
+    }
+}
+impl PartialEq for Event {
+    fn eq(&self, other: &Self) -> bool {
+        self.handle.handle == other.handle.handle
+    }
+}
+impl Eq for Event {}
+
 #[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 struct Inner {
     handle: HANDLE,
 }
