@@ -1,7 +1,7 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::selector::rawpoll::{sys_poll, PollFD, POLLERR, POLLHUP, POLLIN, POLLOUT, POLLPRI};
-use crate::selector::{Event, Interest};
+use crate::selector::Interest;
 use crate::RawSocketFd;
 use std::borrow::Borrow;
 use std::cell::RefCell;
@@ -12,14 +12,10 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use super::Event;
+
 pub struct Poll {
     inner: Arc<Inner>,
-}
-struct Inner {
-    waker: crate::sys::Event,
-    /// sys_poll argument
-    registrations: RefCell<Registration>, // Locked first
-    pollfds: RefCell<PollFds>, // Locked second
 }
 
 struct PollFds {
@@ -27,6 +23,12 @@ struct PollFds {
     fds: Vec<PollFD>,
 }
 impl PollFds {
+    fn new(capacity: usize) -> PollFds {
+        Self {
+            active_fds: 0usize,
+            fds: Vec::with_capacity(capacity),
+        }
+    }
     fn active_fds(&self) -> usize {
         self.active_fds
     }
@@ -75,12 +77,26 @@ impl PollFds {
 
 impl Poll {}
 
+struct Inner {
+    waker: crate::sys::Event,
+    /// sys_poll argument
+    pollfds: RefCell<PollFds>,
+    /// Index
+    registrations: RefCell<Registration>,
+}
 impl Inner {
+    fn new(capacity: usize) -> Result<Inner> {
+        Ok(Self {
+            waker: crate::sys::Event::new()?,
+            registrations: RefCell::new(Registration::new(capacity)),
+            pollfds: RefCell::new(PollFds::new(capacity)),
+        })
+    }
     fn register(&self, fd: RawSocketFd, token: usize, interests: i16) -> Result<()> {
         if !fd.is_valid() {
             return Err(Error::from(ErrorKind::InvalidInput));
         }
-        // Grab the registrations lock
+        // Grab the registrations cell
         let mut registrations = self.registrations.borrow_mut();
 
         // Do not register twice
@@ -92,7 +108,7 @@ impl Inner {
             .try_reserve(1)
             .or(Err(Error::from(ErrorKind::OutOfMemory)))?;
 
-        // Grab the pollfds lock
+        // Grab the pollfds cell
         let mut pollfds = self.pollfds.borrow_mut();
         let index = pollfds.add_fd(fd, interests)?;
 
@@ -109,13 +125,13 @@ impl Inner {
         if !fd.is_valid() {
             return Err(Error::from(ErrorKind::InvalidInput));
         }
-        // Grab the registrations lock
+        // Grab the registrations cell
         let mut registrations = self.registrations.borrow_mut();
 
         // Find the entry
         if let Some(entry) = registrations.entries.get_mut(&fd) {
             entry.token = token;
-            // Grab the pollfds lock and update
+            // Grab the pollfds cell and update
             self.pollfds
                 .borrow_mut()
                 .mod_fd(entry.index_in_fds, interests);
@@ -125,12 +141,12 @@ impl Inner {
         }
     }
     fn unregister(&self, fd: RawSocketFd) -> std::io::Result<()> {
-        // Grab the registrations lock
+        // Grab the registrations cell
         let mut registrations = self.registrations.borrow_mut();
 
         // Find the entry
         if let Some(entry) = registrations.entries.remove(&fd) {
-            // Grab the pollfds lock and remove
+            // Grab the pollfds cell and remove
             self.pollfds.borrow_mut().rem_fd(entry.index_in_fds);
             Ok(())
         } else {
@@ -143,9 +159,9 @@ impl Inner {
         events: &mut Vec<crate::selector::Event>,
         timeout_ms: i32,
     ) -> Result<bool> {
-        // Grab the registrations lock
+        // Grab the registrations cell
         let registrations = self.registrations.borrow();
-        // Grab the pollfds lock
+        // Grab the pollfds cell
         let mut pollfds = self.pollfds.borrow_mut();
 
         let mut n_events = sys_poll(&mut pollfds.fds, timeout_ms)?;
@@ -189,8 +205,13 @@ impl Inner {
 struct Registration {
     /// maps an fd to its index in fds and it's associated token
     entries: FxHashMap<RawSocketFd, FdEntry>,
-    /// fds beeing removed before the next "poll()"
-    pending_removal: FxHashSet<RawSocketFd>,
+}
+impl Registration {
+    fn new(capacity: usize) -> Self {
+        Self {
+            entries: FxHashMap::<RawSocketFd, FdEntry>::with_capacity_and_hasher(32, FxBuildHasher),
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
