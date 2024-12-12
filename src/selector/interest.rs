@@ -1,29 +1,21 @@
 use bitflags::bitflags;
 
-#[cfg(target_os = "linux")]
-const READABLE: u32 = libc::EPOLLIN as u32;
-#[cfg(not(target_os = "linux"))]
-const READABLE: u32 = 0x001u32;
-
-#[cfg(target_os = "linux")]
-const PRIORITY: u32 = libc::EPOLLPRI as u32;
-#[cfg(not(target_os = "linux"))]
-const PRIORITY: u32 = 0x002u32;
-
-#[cfg(target_os = "linux")]
-const WRITABLE: u32 = libc::EPOLLOUT as u32;
-#[cfg(not(target_os = "linux"))]
-const WRITABLE: u32 = 0x004u32;
-
 bitflags! {
     /// Represents a set of flags.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Interest: u32 {
-        /// Interest interests.
-        const READABLE = READABLE;
-        /// Writable interests.
-        const WRITABLE = WRITABLE;
-        /// Priority interests.
-        const PRIORITY = PRIORITY;
+        /// Interest interests or event.
+        const READABLE = 0x001u32;
+        /// Writable interests or event.
+        const WRITABLE = 0x004u32;
+        /// Priority interests or event.
+        const PRIORITY = 0x002u32;
+
+        /// Error event.
+        const ERROR = 0x008u32;
+        /// Hang-up event (peer closed its end of the channel).
+        const HANG_UP = 0x010u32;
+        /// Stream socket peer closed connection, or shut down writing half of connection.
+        const RDHANG_UP = 0x2000u32;
     }
 }

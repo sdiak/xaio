@@ -1,7 +1,7 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::selector::rawpoll::{sys_poll, PollFD, POLLERR, POLLHUP, POLLIN, POLLOUT, POLLPRI};
-use crate::selector::Interest;
+use crate::selector::{Event, Interest};
 use crate::RawSocketFd;
 use std::io::{Error, ErrorKind, Result};
 use std::sync::MutexGuard;
@@ -16,8 +16,8 @@ pub struct Poll {
 struct Inner {
     waker: crate::sys::Event,
     /// sys_poll argument
-    registrations: Mutex<Registration>, // Locked first
-    pollfs: Mutex<PollFds>, // Locked second
+    registrations: Registration,
+    pollfds: PollFds,
 }
 
 struct PollFds {
@@ -31,7 +31,7 @@ impl PollFds {
     fn len(&self) -> usize {
         self.fds.len()
     }
-    fn add_fd(&mut self, fd: RawSocketFd, interests: u16) -> Result<usize> {
+    fn add_fd(&mut self, fd: RawSocketFd, interests: i16) -> Result<usize> {
         let mut index = self.active_fds;
         if self.active_fds == self.fds.len() {
             self.fds.try_reserve(1)?;
@@ -50,12 +50,12 @@ impl PollFds {
         self.active_fds += 1;
         Ok(index)
     }
-    fn mod_fd(&mut self, index: usize, interests: u16) {
-        self.fds[index].set_interests(interests);
+    fn mod_fd(&mut self, index: usize, interests: i16) {
+        self.fds[index].set_events(interests);
     }
     fn rem_fd(&mut self, index: usize) {
         let mut index = index;
-        assert!(index > 0); // Can not remove waker
+        assert!(index > 0 && index < self.active_fds); // Can not remove waker
         self.active_fds -= 1;
         if index == self.active_fds {
             self.fds.remove(index);
@@ -75,15 +75,15 @@ impl Poll {}
 
 impl Inner {
     fn grab_pollfds_lock_from_mutator(&self) -> Result<MutexGuard<'_, PollFds>> {
-        if let Ok(mut lock) = self.pollfs.try_lock() {
+        if let Ok(mut lock) = self.pollfds.try_lock() {
             Ok(lock)
         } else {
             // There is a thread running select, wake it, he will wait for us while trying to grab the registration lock
             self.waker.notify()?;
-            Ok(self.pollfs.lock().expect("Can not fail"))
+            Ok(self.pollfds.lock().expect("Can not fail"))
         }
     }
-    fn register(&self, fd: RawSocketFd, token: usize, interests: u16) -> Result<()> {
+    fn register(&self, fd: RawSocketFd, token: usize, interests: i16) -> Result<()> {
         // Grab the registrations lock
         let mut registrations = self.registrations.lock().expect("Can not fail");
 
@@ -96,7 +96,7 @@ impl Inner {
             .try_reserve(1)
             .or(Err(Error::from(ErrorKind::OutOfMemory)))?;
 
-        // Grab the pollfs lock
+        // Grab the pollfds lock
         let mut pollfds = self.grab_pollfds_lock_from_mutator()?;
         let index = pollfds.add_fd(fd, interests)?;
         drop(pollfds);
@@ -110,7 +110,10 @@ impl Inner {
         );
         Ok(())
     }
-    fn reregister(&self, fd: RawSocketFd, token: usize, interests: u16) -> Result<()> {
+    fn reregister(&self, fd: RawSocketFd, token: usize, interests: i16) -> Result<()> {
+        if !fd.is_valid() {
+            return Err(Error::from(ErrorKind::InvalidInput));
+        }
         // Grab the registrations lock
         let mut registrations = self.registrations.lock().expect("Can not fail");
 
@@ -147,11 +150,23 @@ impl Inner {
     ) -> Result<bool> {
         // Grab the registrations lock
         let registrations = self.registrations.lock().expect("Can not fail");
-        // Grab the pollfs lock
-        let mut pollfds = self.pollfs.lock().expect("Can not fail");
+        // Grab the pollfds lock
+        let mut pollfds = self.pollfds.lock().expect("Can not fail");
         // Release the registration lock and wait
         drop(registrations);
-        let n_events = sys_poll(&mut pollfds.fds, timeout_ms)?;
+        let mut n_events = sys_poll(&mut pollfds.fds, timeout_ms)?;
+        for pfd in pollfds.fds.iter() {
+            if n_events == 0 {
+                break;
+            }
+            if pfd.revents() != 0 as _ {
+                events.push(Event {
+                    events: PollFD::events_to_interest(pfd.revents()),
+                    token: 0 as _,
+                }); // FIXME: Token
+            }
+            // if pdf.events()
+        }
         // Remove failed events: TODO:
         Ok(true)
     }

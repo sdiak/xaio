@@ -10,6 +10,17 @@ pub struct EPoll {
     epfd: OwnedFd,
 }
 
+const _: () = assert!(
+    std::mem::align_of::<crate::selector::Event>() >= std::mem::align_of::<libc::epoll_event>()
+        && std::mem::size_of::<crate::selector::Event>()
+            == std::mem::size_of::<libc::epoll_event>()
+        && Interest::READABLE.bits() == libc::EPOLLIN
+        && Interest::WRITABLE.bits() == libc::EPOLLOUT
+        && Interest::PRIORITY.bits() == libc::EPOLLPRI
+        && Interest::ERROR.bits() == libc::EPOLLERR
+        && Interest::HANG_UP.bits() == libc::EPOLLHUP
+        && Interest::RDHANG_UP.bits() == libc::EPOLLRDHUP
+);
 impl EPoll {
     pub fn new(close_on_exec: bool) -> Result<Self> {
         let epfd = unsafe {
@@ -78,12 +89,6 @@ impl crate::selector::SelectorImpl for EPoll {
         self.epoll_ctl(fd.inner, libc::EPOLL_CTL_DEL, 0u32, 0usize)
     }
     fn select(&self, events: &mut Vec<crate::selector::Event>, timeout_ms: i32) -> Result<usize> {
-        const _: () = assert!(
-            std::mem::align_of::<crate::selector::Event>()
-                >= std::mem::align_of::<libc::epoll_event>()
-                && std::mem::size_of::<crate::selector::Event>()
-                    == std::mem::size_of::<libc::epoll_event>()
-        );
         events.clear();
         if unsafe {
             libc::epoll_pwait(

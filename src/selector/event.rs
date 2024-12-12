@@ -2,8 +2,8 @@ use crate::selector::Interest;
 
 #[repr(C, packed(1))]
 pub struct Event {
-    events: Interest,
-    token: u64,
+    pub events: Interest,
+    pub token: u64,
 }
 
 // struct epoll_event {
