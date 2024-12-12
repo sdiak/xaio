@@ -12,13 +12,13 @@ impl Drop for RequestList {
 }
 
 impl RequestList {
-    fn new() -> RequestList {
+    pub fn new() -> RequestList {
         RequestList {
             head: ptr::null_mut(),
         }
     }
 
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.head.is_null()
     }
 

@@ -2,7 +2,7 @@ use std::io::Result;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
-use crate::sys::Event;
+use crate::sys::{Event, EventCallBack};
 
 use crate::{request, ReadyList, Request};
 

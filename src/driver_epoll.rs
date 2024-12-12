@@ -1,11 +1,15 @@
 use crate::{
-    libc_close_log_on_error, saturating_opt_duration_to_timespec, sys::Event, DriverConfig,
-    DriverFlags, DriverHandle, DriverIFace, Request,
+    libc_close_log_on_error, saturating_opt_duration_to_timespec, sys::Event, sys::EventCallBack,
+    DriverConfig, DriverFlags, DriverHandle, DriverIFace, Request,
 };
-use std::io::{Error, ErrorKind, Result};
+use std::{
+    io::{Error, ErrorKind, Result},
+    time,
+};
 
 const BUFFER_SIZE: usize = 256usize;
 const DRIVER_NAME: &str = "EPoll";
+pub(crate) const WAKE_TOKEN: u64 = 0u64;
 
 //https://doc.rust-lang.org/stable/core/mem/union.MaybeUninit.html#initializing-an-array-element-by-element
 
@@ -14,6 +18,7 @@ pub struct DriverEPoll {
     epollfd: libc::c_int,
     waker: Event,
     config: DriverConfig,
+    npending_events: usize,
 }
 
 impl DriverEPoll {
@@ -45,12 +50,31 @@ impl DriverEPoll {
                 if epollfd < 0 {
                     return Err(std::io::Error::last_os_error());
                 }
-                epollfd
+                let mut waker_reg = libc::epoll_event {
+                    events: (libc::EPOLLIN | libc::EPOLLET) as _,
+                    u64: WAKE_TOKEN,
+                };
+                let status = unsafe {
+                    libc::epoll_ctl(
+                        epollfd,
+                        libc::EPOLL_CTL_ADD,
+                        waker.get_native_handle(),
+                        &mut waker_reg as _,
+                    )
+                };
+                if status < 0 {
+                    let err = Err(Error::last_os_error());
+                    libc_close_log_on_error(epollfd);
+                    return err;
+                } else {
+                    epollfd
+                }
             };
         Ok(Self {
             epollfd,
             waker,
             config: real_config,
+            npending_events: 0,
         })
     }
     fn process_events(&mut self, nevents: usize) -> i32 {
@@ -88,6 +112,9 @@ impl DriverIFace for DriverEPoll {
         timeout_ms: i32,
         _ready_list: &mut crate::RequestList,
     ) -> std::io::Result<i32> {
+        // if self.npending_events == 0 {
+        //     timeout_ms = 0;
+        // }
         let mut buffer: [libc::epoll_event; 64] =
             unsafe { std::mem::MaybeUninit::zeroed().assume_init() };
         let n_events = unsafe {
@@ -102,7 +129,13 @@ impl DriverIFace for DriverEPoll {
         if n_events < 0 {
             return Err(Error::last_os_error());
         }
-        Ok(self.process_events(n_events as usize))
+        let mut n_user_events = 0;
+        for ev in buffer {
+            if ev.u64 != WAKE_TOKEN {
+                n_user_events += 1;
+            }
+        }
+        Ok(n_user_events)
     }
     #[inline]
     fn wake(&self) -> std::io::Result<()> {

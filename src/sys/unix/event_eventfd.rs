@@ -1,5 +1,8 @@
-use crate::{libc_close_log_on_error, libc_read_all, libc_write_all, selector::rawpoll};
+use crate::{
+    libc_close_log_on_error, libc_read_all, libc_write_all, selector::rawpoll, sys::EventCallBack,
+};
 use std::{
+    fmt::Debug,
     io::{Error, ErrorKind, Result},
     sync::Arc,
 };
@@ -12,8 +15,20 @@ use std::{
 pub struct Event {
     handle: Arc<Inner>,
 }
+impl PartialEq for Event {
+    fn eq(&self, other: &Self) -> bool {
+        self.handle.fd == other.handle.fd
+    }
+}
+impl Eq for Event {}
+impl std::hash::Hash for Event {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.handle.fd.hash(state);
+    }
+}
+
 #[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct Inner {
     fd: libc::c_int,
 }

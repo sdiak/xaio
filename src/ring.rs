@@ -1,13 +1,15 @@
+use crate::sys;
+use num::ToPrimitive;
+use rustc_hash::{FxBuildHasher, FxHashMap};
+use std::io::Error;
 use std::sync::LazyLock;
 use std::{cell::RefCell, sync::atomic::AtomicU32, time::Instant};
-
-use num::ToPrimitive;
 
 use crate::{
     request_queue::RequestQueue, Driver, DriverIFace, PhantomUnsend, PhantomUnsync, ReadyList,
     Request,
 };
-use std::io::Result;
+use std::io::{ErrorKind, Result};
 
 use crate::details::TimerHeap;
 
@@ -22,6 +24,7 @@ pub(crate) struct RingInner {
     concurrent: RequestQueue,
     ready: ReadyList,
     timeouts: TimerHeap,
+    interrupts: FxHashMap<sys::Event, RingInterrupt>,
     _unsync: PhantomUnsync,
     _unsend: PhantomUnsend,
 }
@@ -42,6 +45,43 @@ impl Ring {
         Ok(Self {
             inner: Box::new(RefCell::new(RingInner::new(driver)?)),
         })
+    }
+
+    pub fn add_interrupt(&mut self, interrupt: RingInterrupt) -> Result<sys::Event> {
+        let mut thiz = self.inner.borrow_mut();
+        if let Ok(_) = thiz.interrupts.try_reserve(1) {
+            let ev = sys::Event::new()?;
+            thiz.interrupts.insert(ev.clone(), interrupt);
+            // TODO: driver
+            Ok(ev)
+        } else {
+            Err(Error::from(ErrorKind::OutOfMemory))
+        }
+    }
+    pub fn remove_interrupt(&mut self, event: &sys::Event) -> bool {
+        let mut thiz = self.inner.borrow_mut();
+        if let Some(_) = thiz.interrupts.remove(event) {
+            //TODO: driver
+            true
+        } else {
+            false
+        }
+    }
+}
+
+pub enum RingInterrupt {
+    Rust(Box<dyn FnMut()>),
+    C(extern "C" fn(*mut libc::c_void), *mut libc::c_void),
+}
+
+impl std::fmt::Debug for RingInterrupt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Rust(_) => f.write_str("RingInterrupt::Rust(Box<dyn FnMut()>)"),
+            Self::C(_, _) => f.write_str(
+                "RingInterrupt::C(extern \"C\" fn(*mut libc::c_void), *mut libc::c_void)",
+            ),
+        }
     }
 }
 
@@ -83,6 +123,10 @@ impl RingInner {
             concurrent: RequestQueue::new()?,
             ready: ReadyList::new(),
             timeouts: TimerHeap::new(timer_capacity)?,
+            interrupts: FxHashMap::<sys::Event, RingInterrupt>::with_capacity_and_hasher(
+                32,
+                FxBuildHasher,
+            ),
             _unsync: PhantomUnsync {},
             _unsend: PhantomUnsend {},
         })

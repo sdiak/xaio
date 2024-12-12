@@ -184,7 +184,7 @@ pub fn main() {
         nt_associate_wait_completion_packet(
             completion_paquet,
             iocp,
-            ev.native_handle(),
+            ev.get_native_handle(),
             std::ptr::null_mut() as _,
             0x40000000u32 as _,
             NtStatus { bits: 0 },
@@ -252,7 +252,7 @@ pub fn main() {
         nt_associate_wait_completion_packet(
             completion_paquet,
             iocp,
-            ev.native_handle(),
+            ev.get_native_handle(),
             std::ptr::null_mut() as _,
             0xCAFEBABEu32 as _,
             NtStatus { bits: 0 },

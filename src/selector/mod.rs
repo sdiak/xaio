@@ -9,20 +9,11 @@ use crate::RawSocketFd;
 pub use interest::*;
 
 pub trait SelectorImpl {
-    fn register(
-        &mut self,
-        fd: RawSocketFd,
-        token: usize,
-        interests: Interest,
-    ) -> std::io::Result<()>;
-    fn reregister(
-        &mut self,
-        fd: RawSocketFd,
-        token: usize,
-        interests: Interest,
-    ) -> std::io::Result<()>;
-    fn unregister(&mut self, fd: RawSocketFd) -> std::io::Result<()>;
-    fn select(&self, events: &mut [Event], timeout: Option<Duration>) -> std::io::Result<usize>;
+    fn register(&self, fd: RawSocketFd, token: usize, interests: Interest) -> std::io::Result<()>;
+    fn reregister(&self, fd: RawSocketFd, token: usize, interests: Interest)
+        -> std::io::Result<()>;
+    fn unregister(&self, fd: RawSocketFd) -> std::io::Result<()>;
+    fn select(&self, events: &mut Vec<Event>, timeout_ms: i32) -> std::io::Result<usize>;
 }
 
 pub struct Selector {}

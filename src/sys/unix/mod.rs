@@ -8,3 +8,7 @@
 )]
 mod event;
 pub use event::*;
+
+#[cfg(target_os = "linux")]
+mod epoll;
+pub use epoll::*;

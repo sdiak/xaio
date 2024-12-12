@@ -41,6 +41,7 @@ pub trait DriverIFace {
 
 #[allow(clippy::large_enum_variant)]
 #[enum_dispatch(DriverIFace)]
+#[derive(Debug)]
 pub enum Driver {
     // #[cfg(target_os = "linux")]
     // DriverURing,
