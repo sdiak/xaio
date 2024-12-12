@@ -3,6 +3,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use crate::selector::rawpoll::{sys_poll, PollFD, POLLERR, POLLHUP, POLLIN, POLLOUT, POLLPRI};
 use crate::selector::{Event, Interest};
 use crate::RawSocketFd;
+use std::borrow::Borrow;
+use std::cell::RefCell;
 use std::io::{Error, ErrorKind, Result};
 use std::sync::MutexGuard;
 use std::{
@@ -16,8 +18,8 @@ pub struct Poll {
 struct Inner {
     waker: crate::sys::Event,
     /// sys_poll argument
-    registrations: Registration,
-    pollfds: PollFds,
+    registrations: RefCell<Registration>, // Locked first
+    pollfds: RefCell<PollFds>, // Locked second
 }
 
 struct PollFds {
@@ -55,7 +57,7 @@ impl PollFds {
     }
     fn rem_fd(&mut self, index: usize) {
         let mut index = index;
-        assert!(index > 0 && index < self.active_fds); // Can not remove waker
+        assert!(index > 0); // Can not remove waker
         self.active_fds -= 1;
         if index == self.active_fds {
             self.fds.remove(index);
@@ -74,18 +76,12 @@ impl PollFds {
 impl Poll {}
 
 impl Inner {
-    fn grab_pollfds_lock_from_mutator(&self) -> Result<MutexGuard<'_, PollFds>> {
-        if let Ok(mut lock) = self.pollfds.try_lock() {
-            Ok(lock)
-        } else {
-            // There is a thread running select, wake it, he will wait for us while trying to grab the registration lock
-            self.waker.notify()?;
-            Ok(self.pollfds.lock().expect("Can not fail"))
-        }
-    }
     fn register(&self, fd: RawSocketFd, token: usize, interests: i16) -> Result<()> {
+        if !fd.is_valid() {
+            return Err(Error::from(ErrorKind::InvalidInput));
+        }
         // Grab the registrations lock
-        let mut registrations = self.registrations.lock().expect("Can not fail");
+        let mut registrations = self.registrations.borrow_mut();
 
         // Do not register twice
         if registrations.entries.contains_key(&fd) {
@@ -97,9 +93,8 @@ impl Inner {
             .or(Err(Error::from(ErrorKind::OutOfMemory)))?;
 
         // Grab the pollfds lock
-        let mut pollfds = self.grab_pollfds_lock_from_mutator()?;
+        let mut pollfds = self.pollfds.borrow_mut();
         let index = pollfds.add_fd(fd, interests)?;
-        drop(pollfds);
 
         registrations.entries.insert(
             fd,
@@ -115,13 +110,14 @@ impl Inner {
             return Err(Error::from(ErrorKind::InvalidInput));
         }
         // Grab the registrations lock
-        let mut registrations = self.registrations.lock().expect("Can not fail");
+        let mut registrations = self.registrations.borrow_mut();
 
         // Find the entry
         if let Some(entry) = registrations.entries.get_mut(&fd) {
             entry.token = token;
             // Grab the pollfds lock and update
-            self.grab_pollfds_lock_from_mutator()?
+            self.pollfds
+                .borrow_mut()
                 .mod_fd(entry.index_in_fds, interests);
             Ok(())
         } else {
@@ -130,13 +126,12 @@ impl Inner {
     }
     fn unregister(&self, fd: RawSocketFd) -> std::io::Result<()> {
         // Grab the registrations lock
-        let mut registrations = self.registrations.lock().expect("Can not fail");
+        let mut registrations = self.registrations.borrow_mut();
 
         // Find the entry
         if let Some(entry) = registrations.entries.remove(&fd) {
             // Grab the pollfds lock and remove
-            self.grab_pollfds_lock_from_mutator()?
-                .rem_fd(entry.index_in_fds);
+            self.pollfds.borrow_mut().rem_fd(entry.index_in_fds);
             Ok(())
         } else {
             Err(Error::from(ErrorKind::NotFound))
@@ -149,25 +144,24 @@ impl Inner {
         timeout_ms: i32,
     ) -> Result<bool> {
         // Grab the registrations lock
-        let registrations = self.registrations.lock().expect("Can not fail");
+        let registrations = self.registrations.borrow();
         // Grab the pollfds lock
-        let mut pollfds = self.pollfds.lock().expect("Can not fail");
-        // Release the registration lock and wait
-        drop(registrations);
+        let mut pollfds = self.pollfds.borrow_mut();
+
         let mut n_events = sys_poll(&mut pollfds.fds, timeout_ms)?;
         for pfd in pollfds.fds.iter() {
             if n_events == 0 {
                 break;
             }
+            // TODO: waker !
             if pfd.revents() != 0 as _ {
                 events.push(Event {
                     events: PollFD::events_to_interest(pfd.revents()),
-                    token: 0 as _,
-                }); // FIXME: Token
+                    token: registrations.entries.get(&pfd.fd()).unwrap().token as _,
+                });
+                n_events -= 1;
             }
-            // if pdf.events()
         }
-        // Remove failed events: TODO:
         Ok(true)
     }
     fn poll(&self, events: &mut Vec<crate::selector::Event>) -> Result<usize> {
