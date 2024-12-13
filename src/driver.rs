@@ -6,7 +6,7 @@ use super::driver_none::DriverNone;
 #[cfg(target_os = "linux")]
 use super::driver_uring::DriverURing;
 
-use super::{Request, RequestList};
+use super::{Request, RequestHandle, RequestList};
 use bitflags::bitflags;
 use enum_dispatch::enum_dispatch;
 use std::{pin::Pin, time::Duration};
@@ -31,8 +31,8 @@ pub trait DriverIFace {
 
     fn wait(&mut self, ready_list: &mut RequestList, timeout_ms: i32) -> Result<i32>;
 
-    fn submit(&mut self, sub: Pin<&mut Request>) -> Result<()>;
-    fn cancel(&mut self, sub: Pin<&Request>) -> Result<()>;
+    fn submit(&mut self, sub: Pin<&mut Request>) -> Result<RequestHandle>;
+    fn cancel(&mut self, handle: RequestHandle) -> Result<()>;
 
     fn wake(&self) -> Result<()>;
 

@@ -3,6 +3,12 @@ use std::sync::atomic::Ordering;
 pub(super) const PENDING: i32 = i32::MIN;
 pub(super) const UNKNOWN: i32 = i32::MIN + 1;
 
+#[repr(u8)]
+pub enum OpCode {
+    OP_NONE = 0,
+    OP_SOCKET_READ = 1,
+}
+
 #[repr(C)]
 // #[derive(Debug)]
 pub struct Request {
@@ -21,6 +27,11 @@ impl Default for Request {
     fn default() -> Self {
         unsafe { std::mem::MaybeUninit::zeroed().assume_init() }
     }
+}
+
+#[repr(C)]
+pub struct RequestHandle {
+    token: usize,
 }
 
 impl Request {

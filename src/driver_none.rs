@@ -1,5 +1,6 @@
 use crate::{
-    DriverConfig, DriverFlags, DriverHandle, DriverIFace, Request, AN_INVALID_DRIVER_HANDLE,
+    DriverConfig, DriverFlags, DriverHandle, DriverIFace, Request, RequestHandle,
+    AN_INVALID_DRIVER_HANDLE,
 };
 use std::io::{Error, ErrorKind, Result};
 
@@ -41,10 +42,10 @@ impl DriverIFace for DriverNone {
     fn name(&self) -> &'static str {
         self.name
     }
-    fn submit(&mut self, _sub: std::pin::Pin<&mut Request>) -> Result<()> {
+    fn submit(&mut self, _sub: std::pin::Pin<&mut Request>) -> Result<RequestHandle> {
         Err(Error::from(ErrorKind::Unsupported))
     }
-    fn cancel(&mut self, _sub: std::pin::Pin<&Request>) -> std::io::Result<()> {
+    fn cancel(&mut self, _handle: RequestHandle) -> std::io::Result<()> {
         Err(Error::from(ErrorKind::NotFound))
     }
     fn wait(

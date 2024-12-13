@@ -1,6 +1,7 @@
 use crate::{
-    libc_close_log_on_error, saturating_opt_duration_to_timespec, sys::Event, sys::EventCallBack,
-    DriverConfig, DriverFlags, DriverHandle, DriverIFace, Request,
+    libc_close_log_on_error, saturating_opt_duration_to_timespec,
+    sys::{Event, EventCallBack},
+    DriverConfig, DriverFlags, DriverHandle, DriverIFace, Request, RequestHandle,
 };
 use std::{
     io::{Error, ErrorKind, Result},
@@ -101,10 +102,10 @@ impl DriverIFace for DriverEPoll {
     fn name(&self) -> &'static str {
         DRIVER_NAME
     }
-    fn submit(&mut self, _sub: std::pin::Pin<&mut Request>) -> Result<()> {
+    fn submit(&mut self, _sub: std::pin::Pin<&mut Request>) -> Result<RequestHandle> {
         Err(Error::from(ErrorKind::Unsupported))
     }
-    fn cancel(&mut self, _sub: std::pin::Pin<&Request>) -> std::io::Result<()> {
+    fn cancel(&mut self, _handle: RequestHandle) -> std::io::Result<()> {
         Err(Error::from(ErrorKind::NotFound))
     }
     fn wait(
