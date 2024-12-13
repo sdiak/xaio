@@ -1,8 +1,11 @@
 use crate::{
     saturating_opt_duration_to_ms, sys::Event, DriverConfig, DriverFlags, DriverHandle,
-    DriverIFace, Request, RequestHandle,
+    DriverIFace, Request,
 };
-use std::io::{Error, ErrorKind, Result};
+use std::{
+    io::{Error, ErrorKind, Result},
+    ptr::NonNull,
+};
 use windows_sys::Win32::Foundation::CloseHandle;
 use windows_sys::Win32::Foundation::HANDLE;
 use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
@@ -104,10 +107,10 @@ impl DriverIFace for DriverIOCP {
     fn name(&self) -> &'static str {
         DRIVER_NAME
     }
-    fn submit(&mut self, _sub: std::pin::Pin<&mut Request>) -> Result<RequestHandle> {
+    fn submit(&mut self, _req: NonNull<Request>) -> Result<()> {
         Err(Error::from(ErrorKind::Unsupported))
     }
-    fn cancel(&mut self, _handle: RequestHandle) -> std::io::Result<()> {
+    fn cancel(&mut self, _req: NonNull<Request>) -> std::io::Result<()> {
         Err(Error::from(ErrorKind::NotFound))
     }
     fn wait(

@@ -1,8 +1,8 @@
 use crate::{
-    DriverConfig, DriverFlags, DriverHandle, DriverIFace, Request, RequestHandle,
-    AN_INVALID_DRIVER_HANDLE,
+    DriverConfig, DriverFlags, DriverHandle, DriverIFace, Request, AN_INVALID_DRIVER_HANDLE,
 };
 use std::io::{Error, ErrorKind, Result};
+use std::ptr::NonNull;
 
 const DRIVER_NAME: &str = "None";
 
@@ -42,10 +42,10 @@ impl DriverIFace for DriverNone {
     fn name(&self) -> &'static str {
         self.name
     }
-    fn submit(&mut self, _sub: std::pin::Pin<&mut Request>) -> Result<RequestHandle> {
+    unsafe fn submit(&mut self, _req: NonNull<Request>) -> Result<()> {
         Err(Error::from(ErrorKind::Unsupported))
     }
-    fn cancel(&mut self, _handle: RequestHandle) -> std::io::Result<()> {
+    unsafe fn cancel(&mut self, _req: NonNull<Request>) -> std::io::Result<()> {
         Err(Error::from(ErrorKind::NotFound))
     }
     fn wait(
@@ -58,7 +58,7 @@ impl DriverIFace for DriverNone {
     fn wake(&self) -> Result<()> {
         Err(Error::from(ErrorKind::Unsupported))
     }
-    fn get_native_handle(&self) -> DriverHandle {
+    unsafe fn get_native_handle(&self) -> DriverHandle {
         AN_INVALID_DRIVER_HANDLE
     }
 }

@@ -4,10 +4,34 @@ pub(super) const PENDING: i32 = i32::MIN;
 pub(super) const UNKNOWN: i32 = i32::MIN + 1;
 
 #[repr(u8)]
-pub enum OpCode {
-    OP_NONE = 0,
-    OP_SOCKET_READ = 1,
+#[derive(Clone, Copy, Debug)]
+enum OpCode {
+    /// No operation
+    NOOP, // **MUST** be first and `0`
+    /// Socket read
+    SOCKET_READ,
+    /// An invalid op-code
+    INVALID, // **MUST** be last
 }
+impl From<u8> for OpCode {
+    #[inline(always)]
+    fn from(value: u8) -> Self {
+        if value <= OpCode::INVALID as u8 {
+            unsafe { std::mem::transmute(value) }
+        } else {
+            OpCode::INVALID
+        }
+    }
+}
+impl From<OpCode> for u8 {
+    #[inline(always)]
+    fn from(value: OpCode) -> Self {
+        value as _
+    }
+}
+
+pub(crate) const OP_NOOP: u8 = OpCode::NOOP as _;
+pub(crate) const OP_SOCKET_READ: u8 = OpCode::SOCKET_READ as _;
 
 #[repr(C)]
 // #[derive(Debug)]
@@ -62,6 +86,11 @@ impl Request {
         let old_next = (self.list_next.load(order) & !Request::IN_A_LIST_BIT) as *mut Request;
         self.list_next.store(0usize, Ordering::Relaxed);
         old_next
+    }
+
+    #[inline]
+    pub fn opcode_raw(&self) -> u8 {
+        (self.flags_and_op_code & 0xFFu32) as u8
     }
     /*
     pub fn set_status(self, status: i32) -> bool {

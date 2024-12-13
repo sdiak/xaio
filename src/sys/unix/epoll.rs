@@ -1,4 +1,4 @@
-use crate::selector::Interest;
+use crate::selector::{Interest, RawSelectorHandle};
 use crate::RawSocketFd;
 use std::{
     io::{Error, ErrorKind, Result},
@@ -104,5 +104,8 @@ impl crate::selector::SelectorImpl for EPoll {
         } else {
             Err(Error::last_os_error())
         }
+    }
+    unsafe fn get_native_handle(&self) -> RawSelectorHandle {
+        RawSelectorHandle::new(self.epfd.as_raw_fd())
     }
 }

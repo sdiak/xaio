@@ -9,6 +9,7 @@ use super::driver_uring::DriverURing;
 use super::{Request, RequestHandle, RequestList};
 use bitflags::bitflags;
 use enum_dispatch::enum_dispatch;
+use std::ptr::NonNull;
 use std::{pin::Pin, time::Duration};
 
 use std::io::Result;
@@ -31,12 +32,12 @@ pub trait DriverIFace {
 
     fn wait(&mut self, ready_list: &mut RequestList, timeout_ms: i32) -> Result<i32>;
 
-    fn submit(&mut self, sub: Pin<&mut Request>) -> Result<RequestHandle>;
-    fn cancel(&mut self, handle: RequestHandle) -> Result<()>;
+    unsafe fn submit(&mut self, req: NonNull<Request>) -> Result<()>;
+    unsafe fn cancel(&mut self, req: NonNull<Request>) -> Result<()>;
 
     fn wake(&self) -> Result<()>;
 
-    fn get_native_handle(&self) -> DriverHandle;
+    unsafe fn get_native_handle(&self) -> DriverHandle;
 }
 
 #[allow(clippy::large_enum_variant)]

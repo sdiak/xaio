@@ -1,5 +1,5 @@
 use std::io::{Read, Write};
-use xaio::{Driver, DriverConfig, DriverIFace, DriverKind, RequestList};
+use xaio::{Driver, DriverConfig, DriverIFace, DriverKind, Request, RequestList};
 
 pub fn main() {
     println!("Hello unix");
@@ -10,6 +10,11 @@ pub fn main() {
     driver.wake().unwrap();
     (*driver).wait(&mut ready, -1).unwrap();
 
+    let mut req: Request = Request::default();
+    let sub = unsafe { std::ptr::NonNull::new_unchecked(&mut req as *mut Request) };
+    let sub2 = sub;
+    println!("{sub:?}/{sub2:?}");
+    unsafe { driver.submit(sub).unwrap() };
     // let (mut a, mut b) = xaio::socketpair(socket2::Type::STREAM, None).unwrap();
     // println!("({a:?}, {b:?})");
 

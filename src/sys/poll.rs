@@ -1,7 +1,7 @@
 use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use crate::selector::rawpoll::{sys_poll, PollFD};
-use crate::selector::Interest;
+use crate::selector::{Interest, RawSelectorHandle};
 use crate::RawSocketFd;
 use std::cell::RefCell;
 use std::fmt::Debug;
@@ -45,6 +45,9 @@ impl crate::selector::SelectorImpl for Poll {
         } else {
             self.inner.poll(events)
         }
+    }
+    unsafe fn get_native_handle(&self) -> RawSelectorHandle {
+        RawSelectorHandle::new_invalid()
     }
 }
 

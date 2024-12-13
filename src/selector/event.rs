@@ -1,6 +1,7 @@
 use crate::selector::Interest;
 
 #[repr(C, packed(1))]
+#[derive(Debug)]
 pub struct Event {
     pub events: Interest,
     pub token: u64,
