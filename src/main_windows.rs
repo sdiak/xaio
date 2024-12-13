@@ -11,6 +11,7 @@ use windows_sys::Win32::{
     System::IO::{CreateIoCompletionPort, OVERLAPPED_ENTRY},
 };
 use xaio::sys::Event;
+use xaio::Request;
 
 #[derive(Clone, Copy)]
 pub struct OverlappedEntry(OVERLAPPED_ENTRY);
@@ -475,6 +476,8 @@ pub fn main() {
         a.as_socket().as_raw_socket(),
         b.as_socket().as_raw_socket()
     );
+
+    println!("\nSizeof Request: {}", std::mem::size_of::<Request>());
 }
 
 fn windows_close_handle_log_on_error(handle: windows_sys::Win32::Foundation::HANDLE) {

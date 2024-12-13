@@ -1,4 +1,6 @@
-use std::sync::atomic::Ordering;
+use std::{ptr::NonNull, sync::atomic::Ordering};
+
+use crate::{selector::Interest, RawSocketFd};
 
 pub(super) const PENDING: i32 = i32::MIN;
 pub(super) const UNKNOWN: i32 = i32::MIN + 1;
@@ -9,8 +11,12 @@ pub(super) const UNKNOWN: i32 = i32::MIN + 1;
 enum OpCode {
     /// No operation
     NOOP, // **MUST** be first and `0`
+    /// Socket poll
+    SOCKET_POLL,
     /// Socket read
-    SOCKET_READ,
+    SOCKET_RECV,
+    /// Socket send
+    SOCKET_SEND,
     /// An invalid op-code
     INVALID, // **MUST** be last
 }
@@ -32,10 +38,12 @@ impl From<OpCode> for u8 {
 }
 
 pub(crate) const OP_NOOP: u8 = OpCode::NOOP as _;
-pub(crate) const OP_SOCKET_READ: u8 = OpCode::SOCKET_READ as _;
+pub(crate) const OP_SOCKET_POLL: u8 = OpCode::SOCKET_POLL as _;
+pub(crate) const OP_SOCKET_RECV: u8 = OpCode::SOCKET_RECV as _;
+pub(crate) const OP_SOCKET_SEND: u8 = OpCode::SOCKET_SEND as _;
 
 #[repr(C)]
-// #[derive(Debug)]
+// #[derive(Clone)]
 pub struct Request {
     #[cfg(target_os = "windows")]
     win_header: windows_sys::Win32::System::IO::OVERLAPPED,
@@ -47,11 +55,35 @@ pub struct Request {
     pub(crate) concurrent_status: std::sync::atomic::AtomicI32,
     flags_and_op_code: u32,
     list_next: std::sync::atomic::AtomicUsize,
+    pub(crate) op: RequestData,
 }
 impl Default for Request {
     fn default() -> Self {
         unsafe { std::mem::MaybeUninit::zeroed().assume_init() }
     }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SocketRequest {
+    /// The socket
+    pub(crate) socket: RawSocketFd,
+    /// The interests
+    pub(crate) interests: u16,
+    /// The events
+    pub(crate) events: u16,
+    /// Amount of read or write to do
+    pub(crate) todo: u32,
+    /// Amount of read or write already done
+    pub(crate) done: u32,
+    /// The read or write buffer
+    pub(crate) buffer: *mut u8,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union RequestData {
+    pub(crate) socket: SocketRequest,
 }
 
 #[repr(C)]
@@ -89,9 +121,15 @@ impl Request {
         old_next
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn opcode_raw(&self) -> u8 {
         (self.flags_and_op_code & 0xFFu32) as u8
+    }
+
+    #[inline(always)]
+    pub fn is_a_socket_op(&self) -> bool {
+        let opcode: u8 = self.opcode_raw();
+        OP_SOCKET_POLL <= opcode && opcode <= OP_SOCKET_RECV
     }
     /*
     pub fn set_status(self, status: i32) -> bool {

@@ -1,9 +1,12 @@
+extern crate autocfg;
 extern crate cbindgen;
 
 use std::env;
 
 #[allow(clippy::field_reassign_with_default)]
 fn main() {
+    let ac = autocfg::new();
+    ac.emit_expression_cfg("libc::MSG_DONTWAIT", "has_libc_MSG_DONTWAIT");
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let mut config: cbindgen::Config = Default::default();
     config.language = cbindgen::Language::C;
@@ -41,4 +44,5 @@ fn main() {
         .generate()
         .expect("Unable to generate bindings")
         .write_to_file("include/xaio.h");
+    autocfg::rerun_path("build.rs");
 }

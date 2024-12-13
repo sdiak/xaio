@@ -21,6 +21,23 @@ pub(crate) fn libc_close_log_on_error(fd: libc::c_int) {
     }
 }
 
+fn io_error_kind_to_errno_constant(err: ErrorKind) -> libc::c_int {
+    match err {
+        ErrorKind::AlreadyExists => libc::EEXIST,
+        _ => libc::EIO,
+    }
+}
+#[cfg(target_family = "unix")]
+pub fn io_error_to_errno_constant(err: &Error) -> libc::c_int {
+    err.raw_os_error()
+        .unwrap_or_else(|| io_error_kind_to_errno_constant(err.kind()))
+}
+#[cfg(not(target_family = "unix"))]
+pub fn io_error_to_errno_constant(err: &Error) -> libc::c_int {
+    err.raw_os_error()
+        .unwrap_or_else(|| io_error_kind_to_errno_constant(err.kind()))
+}
+
 #[cfg(target_family = "windows")]
 #[allow(dead_code)]
 pub(crate) fn windows_close_handle_log_on_error(handle: windows_sys::Win32::Foundation::HANDLE) {

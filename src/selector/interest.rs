@@ -17,5 +17,8 @@ bitflags! {
         const HANG_UP = 0x010u32;
         /// Stream socket peer closed connection, or shut down writing half of connection.
         const RDHANG_UP = 0x2000u32;
+
+        // Removes the registration after the first event
+        const ONESHOT = 0x010u32;
     }
 }

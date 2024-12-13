@@ -1,4 +1,7 @@
-use std::{ptr, sync::atomic::Ordering};
+use std::{
+    ptr::{self, NonNull},
+    sync::atomic::Ordering,
+};
 
 use crate::Request;
 
@@ -19,6 +22,10 @@ impl Default for RequestList {
     }
 }
 
+pub trait RequestOrd {
+    fn before(a: &Request, b: *const Request) -> bool;
+}
+
 impl RequestList {
     pub fn new() -> RequestList {
         RequestList {
@@ -31,13 +38,13 @@ impl RequestList {
     }
 
     /// O(1)
-    unsafe fn push_front(&mut self, node: *mut Request) {
+    pub unsafe fn push_front(&mut self, node: *mut Request) {
         debug_assert!(!node.is_null());
         (*node).list_set_next(self.head, Ordering::Relaxed);
         self.head = node;
     }
     /// O(1)
-    unsafe fn pop_front(&mut self) -> *mut Request {
+    pub unsafe fn pop_front(&mut self) -> *mut Request {
         if self.head.is_null() {
             ptr::null_mut()
         } else {
@@ -46,7 +53,7 @@ impl RequestList {
             old_head
         }
     }
-    fn contains(&self, node: *const Request) -> bool {
+    pub fn contains(&self, node: *const Request) -> bool {
         if node.is_null() || !(unsafe { (*node).in_a_list() }) {
             return false;
         }
@@ -59,7 +66,7 @@ impl RequestList {
         }
         false
     }
-    unsafe fn remove(&mut self, node: *mut Request) -> bool {
+    pub unsafe fn remove(&mut self, node: *mut Request) -> bool {
         if node.is_null() || !(unsafe { (*node).in_a_list() }) {
             return false;
         }
@@ -86,7 +93,25 @@ impl RequestList {
     }
 
     /// O(n)
-    unsafe fn push_back(&mut self, node: *mut Request) {
+    pub unsafe fn push_back2(&mut self, mut node: NonNull<Request>) {
+        // Ensures in a single list at a given time
+        node.as_mut()
+            .list_set_next(ptr::null_mut(), Ordering::Relaxed);
+        if self.head.is_null() {
+            self.head = node.as_ptr();
+        } else {
+            let mut prev: *mut Request = self.head;
+            let mut prev_next = (*prev).list_get_next(Ordering::Relaxed);
+            while !prev_next.is_null() {
+                prev = prev_next;
+                prev_next = (*prev).list_get_next(Ordering::Relaxed);
+            }
+            (*prev).list_update_next(node.as_ptr(), Ordering::Relaxed);
+        }
+    }
+
+    /// O(n)
+    pub unsafe fn push_back(&mut self, node: *mut Request) {
         debug_assert!(!node.is_null());
         // Ensures in a single list at a given time
         (*node).list_set_next(ptr::null_mut(), Ordering::Relaxed);
@@ -101,6 +126,64 @@ impl RequestList {
             }
             (*prev).list_update_next(node, Ordering::Relaxed);
         }
+    }
+
+    /// O(n)
+    pub unsafe fn insert_sorted<Sorter: RequestOrd>(&mut self, mut node: NonNull<Request>) {
+        if self.head.is_null() || Sorter::before(node.as_ref(), self.head) {
+            // Ensures in a single list at a given time
+            node.as_mut().list_set_next(self.head, Ordering::Relaxed);
+        } else {
+            // Find the correct position
+            let mut it = self.head;
+            loop {
+                let next = (*it).list_get_next(Ordering::Relaxed);
+                if Sorter::before(node.as_ref(), next) {
+                    // Insert after the iterator
+                    (*it).list_update_next(node.as_mut(), Ordering::Relaxed);
+                    node.as_mut().list_set_next(next, Ordering::Relaxed);
+                    break;
+                }
+                it = next;
+            }
+        }
+    }
+
+    pub fn retain_mut<F>(&mut self, mut f: F) -> crate::ReadyList
+    where
+        F: FnMut(&mut Request) -> bool,
+    {
+        let mut removed = crate::ReadyList::new();
+        // if self.head.is_null() {
+        //     return;
+        // }
+        unsafe {
+            while !self.head.is_null() && !f(&mut *self.head) {
+                let mut node = self.head;
+                self.head = (*node).list_pop_next(Ordering::Relaxed);
+                removed.push_back(node);
+            }
+        }
+        if self.head.is_null() {
+            return removed;
+        }
+        let mut prev: *mut Request = self.head;
+        let mut it: *mut Request = unsafe { (*prev).list_get_next(Ordering::Relaxed) };
+        while !it.is_null() {
+            unsafe {
+                if !f(&mut *it) {
+                    (*prev).list_update_next(
+                        (*it).list_pop_next(Ordering::Relaxed),
+                        Ordering::Relaxed,
+                    );
+                    removed.push_back(it);
+                    it = prev;
+                }
+            }
+            prev = it;
+            it = unsafe { (*it).list_get_next(Ordering::Relaxed) };
+        }
+        return removed;
     }
     // /// O(n)
     // unsafe fn pop_back(&mut self) -> *mut Request {

@@ -1,4 +1,7 @@
-use std::sync::atomic::Ordering;
+use std::{
+    io::{Error, ErrorKind, Result},
+    sync::atomic::Ordering,
+};
 
 use crate::{request, Request};
 
@@ -17,6 +20,17 @@ impl Drop for ReadyList {
 impl ReadyList {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Allocates a new multi-shot ready instance and pushes it to the end of this list
+    /// # Returns
+    ///   `false` when the system is out of memory
+    #[must_use]
+    pub(crate) fn alloc_and_pushback(&self, model: &Request, status: i32) -> bool {
+        // TODO:
+        let mut new_tail = Request::default();
+        new_tail.status = status;
+        false
     }
 
     #[inline]

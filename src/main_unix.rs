@@ -50,4 +50,6 @@ pub fn main() {
     //     a.as_socket().as_raw(),
     //     b.as_socket().as_raw()
     // );
+
+    println!("\nSizeof Request: {}", std::mem::size_of::<Request>());
 }
