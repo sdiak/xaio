@@ -1,6 +1,9 @@
-use std::pin::Pin;
+use std::{
+    io::{Error, ErrorKind, Result},
+    ptr::NonNull,
+};
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use crate::Request;
 
@@ -11,45 +14,49 @@ type Fd = libc::c_int;
 #[cfg(target_os = "windows")]
 type Fd = usize;
 
-pub(crate) struct FdMap<'a> {
-    readers: FxHashMap<Fd, Pin<&'a Request>>,
-    writers: FxHashMap<Fd, Pin<&'a Request>>,
+pub(crate) struct FdMap {
+    entries: FxHashMap<Fd, Entry>,
 }
 
-impl<'a> FdMap<'a> {
-    pub(crate) fn add_sequential_reader(
-        &'a mut self,
-        fd: Fd,
-        reader: Pin<&'a Request>,
-    ) -> std::io::Result<()> {
-        if self.readers.contains_key(&fd) {
-            Err(std::io::Error::from(std::io::ErrorKind::ResourceBusy))
-        } else if self.readers.try_reserve(1).is_ok() {
-            self.readers.insert(fd, reader);
-            Ok(())
-        } else {
-            Err(std::io::Error::from(std::io::ErrorKind::OutOfMemory))
-        }
-    }
-    pub(crate) fn remove_sequential_reader(&'a mut self, fd: Fd) -> Option<Pin<&'a Request>> {
-        self.readers.remove(&fd)
-    }
+struct Entry {
+    reader: Option<NonNull<Request>>,
+    writer: Option<NonNull<Request>>,
+}
 
-    pub(crate) fn add_sequential_writer(
-        &'a mut self,
-        fd: Fd,
-        writer: Pin<&'a Request>,
-    ) -> std::io::Result<()> {
-        if self.writers.contains_key(&fd) {
-            Err(std::io::Error::from(std::io::ErrorKind::ResourceBusy))
-        } else if self.writers.try_reserve(1).is_ok() {
-            self.writers.insert(fd, writer);
-            Ok(())
-        } else {
-            Err(std::io::Error::from(std::io::ErrorKind::OutOfMemory))
+impl FdMap {
+    pub(crate) fn new(capacity: usize) -> Result<Self> {
+        match std::panic::catch_unwind(|| {
+            FxHashMap::<Fd, Entry>::with_capacity_and_hasher(capacity, FxBuildHasher)
+        }) {
+            Ok(entries) => Ok(Self { entries }),
+            Err(_) => Err(Error::from(ErrorKind::OutOfMemory)),
         }
     }
-    pub(crate) fn remove_sequential_writer(&'a mut self, fd: Fd) -> Option<Pin<&'a Request>> {
-        self.writers.remove(&fd)
+    pub(crate) fn update(
+        &mut self,
+        fd: Fd,
+        reader: Option<NonNull<Request>>,
+        writer: Option<NonNull<Request>>,
+    ) -> std::io::Result<()> {
+        if let Some(entry) = self.entries.get_mut(&fd) {
+            // Check for a single reader and a single writer
+            if (entry.reader.is_some() && reader.is_some())
+                || (entry.writer.is_some() && writer.is_some())
+            {
+                return Err(std::io::Error::from(std::io::ErrorKind::ResourceBusy));
+            }
+            entry.reader = reader;
+            entry.writer = writer;
+            // Drop the entry if there are no more watchers
+            if entry.reader.is_none() && entry.writer.is_none() {
+                self.entries.remove(&fd);
+            }
+        } else if reader.is_some() || writer.is_some() {
+            self.entries.try_reserve(1)?;
+            self.entries
+                .insert(fd, Entry { reader, writer })
+                .expect("Memory is reserved");
+        }
+        Ok(())
     }
 }
