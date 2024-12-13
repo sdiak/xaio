@@ -32,11 +32,17 @@ pub trait DriverIFace {
 
     fn wait(&mut self, ready_list: &mut RequestList, timeout_ms: i32) -> Result<i32>;
 
+    /// # Safety
+    ///   req **MUST** must points to a valid request, this address **MUST** be valid until the request is returned to `DriverIFace::wait`
     unsafe fn submit(&mut self, req: NonNull<Request>) -> Result<()>;
+    /// # Safety
+    ///   req **MUST** must points to a valid request
     unsafe fn cancel(&mut self, req: NonNull<Request>) -> Result<()>;
 
     fn wake(&self) -> Result<()>;
 
+    /// # Safety
+    ///   Handle will be dangling when the driver is dropped
     unsafe fn get_native_handle(&self) -> DriverHandle;
 }
 

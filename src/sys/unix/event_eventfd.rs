@@ -61,17 +61,17 @@ impl Event {
     /// Notify a waiter (multiple notification may be coalesced into one)
     pub fn notify(&self) -> Result<()> {
         let unpark_msg = 1u64.to_ne_bytes();
-        libc_write_all((*self.handle).fd, &unpark_msg, true)
+        libc_write_all(self.handle.fd, &unpark_msg, true)
     }
 
     #[inline]
     pub(crate) unsafe fn get_native_handle(&self) -> libc::c_int {
-        (*self.handle).fd
+        self.handle.fd
     }
 
     /// Waits for the event to be notified or for `timeout_ms` milliseconds
     pub fn wait(&self, timeout_ms: i32) -> Result<()> {
-        let fd = (*self.handle).fd;
+        let fd = self.handle.fd;
         let mut buffer = 0u64.to_ne_bytes();
 
         let pollfd = &mut [rawpoll::PollFD::new(RawSocketFd::new(fd), rawpoll::POLLIN)];

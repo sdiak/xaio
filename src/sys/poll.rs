@@ -213,7 +213,7 @@ impl Inner {
     }
     fn poll(&self, events: &mut Vec<crate::selector::Event>) -> Result<usize> {
         events.clear();
-        while events.len() == 0 && !self.select_inner(events, 0)? {}
+        while events.is_empty() && !self.select_inner(events, 0)? {}
         Ok(events.len())
     }
     fn wait(&self, events: &mut Vec<crate::selector::Event>, timeout_ms: i32) -> Result<usize> {
@@ -222,9 +222,9 @@ impl Inner {
         let deadline =
             std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms as _);
         events.clear();
-        while events.len() == 0 && timeout_ms > 0 {
+        while events.is_empty() && timeout_ms > 0 {
             self.select_inner(events, timeout_ms)?;
-            if events.len() == 0 && std::time::Instant::now() >= deadline {
+            if events.is_empty() && std::time::Instant::now() >= deadline {
                 return Ok(0usize);
             }
         }

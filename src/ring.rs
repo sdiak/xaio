@@ -49,7 +49,7 @@ impl Ring {
 
     pub fn add_interrupt(&mut self, interrupt: RingInterrupt) -> Result<sys::Event> {
         let mut thiz = self.inner.borrow_mut();
-        if let Ok(_) = thiz.interrupts.try_reserve(1) {
+        if thiz.interrupts.try_reserve(1).is_ok() {
             let ev = sys::Event::new()?;
             thiz.interrupts.insert(ev.clone(), interrupt);
             // TODO: driver
@@ -60,7 +60,7 @@ impl Ring {
     }
     pub fn remove_interrupt(&mut self, event: &sys::Event) -> bool {
         let mut thiz = self.inner.borrow_mut();
-        if let Some(_) = thiz.interrupts.remove(event) {
+        if thiz.interrupts.remove(event).is_some() {
             //TODO: driver
             true
         } else {

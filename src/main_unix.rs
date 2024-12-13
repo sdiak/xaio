@@ -1,4 +1,3 @@
-use std::io::{Read, Write};
 use xaio::{Driver, DriverConfig, DriverIFace, DriverKind, Request, RequestList};
 
 pub fn main() {

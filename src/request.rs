@@ -4,6 +4,7 @@ pub(super) const PENDING: i32 = i32::MIN;
 pub(super) const UNKNOWN: i32 = i32::MIN + 1;
 
 #[repr(u8)]
+#[allow(non_camel_case_types, clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug)]
 enum OpCode {
     /// No operation
@@ -17,7 +18,7 @@ impl From<u8> for OpCode {
     #[inline(always)]
     fn from(value: u8) -> Self {
         if value <= OpCode::INVALID as u8 {
-            unsafe { std::mem::transmute(value) }
+            unsafe { std::mem::transmute::<u8, OpCode>(value) }
         } else {
             OpCode::INVALID
         }

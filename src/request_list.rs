@@ -11,6 +11,14 @@ impl Drop for RequestList {
     }
 }
 
+impl Default for RequestList {
+    fn default() -> Self {
+        Self {
+            head: ptr::null_mut(),
+        }
+    }
+}
+
 impl RequestList {
     pub fn new() -> RequestList {
         RequestList {
