@@ -33,7 +33,7 @@ pub trait DriverIFace {
     fn wait(&mut self, ready_list: &mut RequestList, timeout_ms: i32) -> Result<i32>;
 
     /// # Safety
-    ///   req **MUST** must points to a valid request, this address **MUST** be valid until the request is returned to `DriverIFace::wait`
+    ///   req **MUST** must points to a valid request, this address **MUST** be valid until the request is returned by `DriverIFace::wait`
     unsafe fn submit(&mut self, req: NonNull<Request>) -> Result<()>;
     /// # Safety
     ///   req **MUST** must points to a valid request
