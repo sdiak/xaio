@@ -107,10 +107,10 @@ impl DriverIFace for DriverIOCP {
     fn name(&self) -> &'static str {
         DRIVER_NAME
     }
-    fn submit(&mut self, _req: NonNull<Request>) -> Result<()> {
+    unsafe fn submit(&mut self, _req: NonNull<Request>) -> Result<()> {
         Err(Error::from(ErrorKind::Unsupported))
     }
-    fn cancel(&mut self, _req: NonNull<Request>) -> std::io::Result<()> {
+    unsafe fn cancel(&mut self, _req: NonNull<Request>) -> std::io::Result<()> {
         Err(Error::from(ErrorKind::NotFound))
     }
     fn wait(
@@ -149,7 +149,7 @@ impl DriverIFace for DriverIOCP {
         self.waker.notify()
     }
     #[inline]
-    fn get_native_handle(&self) -> DriverHandle {
+    unsafe fn get_native_handle(&self) -> DriverHandle {
         self.iocp
     }
 }

@@ -3,8 +3,9 @@ use std::mem::zeroed;
 use std::os::windows::io::{AsRawSocket, AsSocket};
 use std::{fmt::Debug, mem::MaybeUninit};
 
-use windows_sys::Win32::System::IO::GetQueuedCompletionStatusEx;
+use windows_sys::Win32::System::IO::{GetQueuedCompletionStatusEx, OVERLAPPED};
 // use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
+use windows_sys::Win32::Networking::WinSock::{WSARecv, WSASend, WSABUF};
 use windows_sys::Win32::{
     Foundation::{BOOLEAN, GENERIC_ALL, HANDLE, HMODULE, INVALID_HANDLE_VALUE},
     System::IO::{CreateIoCompletionPort, OVERLAPPED_ENTRY},
@@ -274,10 +275,109 @@ pub fn main() {
     assert!(r != 0 && nentries == 1);
     println!("message: {:?}", buffer[0usize]);
 
-    windows_close_handle_log_on_error(iocp);
+    // windows_close_handle_log_on_error(iocp);
 
     let (mut a, mut b) = xaio::socketpair(socket2::Type::STREAM, None).unwrap();
     println!("({a:?}, {b:?})");
+
+    let mut wasmsg = [' ' as u8, ' ' as u8, ' ' as u8, ' ' as u8];
+    let wsabuf = WSABUF {
+        len: 4,
+        buf: &mut wasmsg as _,
+    };
+    let mut wasmsg2 = [' ' as u8, ' ' as u8, ' ' as u8, ' ' as u8];
+    let wsabuf2 = WSABUF {
+        len: 4,
+        buf: &mut wasmsg2 as _,
+    };
+    let mut lpnumberofbytessent: u32 = 0;
+    let mut lpnumberofbytesrecvd: u32 = 0;
+    let mut ovlp1: OVERLAPPED = unsafe { MaybeUninit::zeroed().assume_init() };
+    let r = unsafe {
+        GetQueuedCompletionStatusEx(
+            iocp,
+            buffer.as_mut_ptr() as _,
+            buffer.len() as _,
+            &mut nentries as _,
+            100 as _,
+            0,
+        )
+    };
+    let iocp_socket = unsafe {
+        CreateIoCompletionPort(
+            a.as_raw_socket() as usize as HANDLE,
+            iocp,
+            a.as_raw_socket() as _, // Use the handle as key to ease dealing with completions
+            0,
+        )
+    };
+    assert!(iocp_socket != INVALID_HANDLE_VALUE);
+
+    assert!(r != 0 || Error::last_os_error().kind() == ErrorKind::TimedOut);
+    let mut lpflags: u32 = 0;
+    let status = unsafe {
+        WSARecv(
+            a.as_raw_socket() as _,
+            &wsabuf,
+            1,
+            &mut lpnumberofbytesrecvd,
+            &mut lpflags as _,
+            &mut ovlp1 as _,
+            None,
+        )
+        // WSASend(
+        //     a.as_raw_socket() as usize,
+        //     &wsabuf,
+        //     1,
+        //     &mut lpnumberofbytessent as _,
+        //     0,
+        //     &mut ovlp as _,
+        //     None,
+        // )
+    };
+    let err = unsafe { GetLastError() };
+    println!(
+        "Status={status}, lpflags={lpflags} err={}({err})",
+        Error::last_os_error()
+    );
+    let mut ovlp2: OVERLAPPED = unsafe { MaybeUninit::zeroed().assume_init() };
+    let status = unsafe {
+        WSARecv(
+            a.as_raw_socket() as _,
+            &wsabuf2,
+            1,
+            &mut lpnumberofbytesrecvd,
+            &mut lpflags as _,
+            &mut ovlp2 as _,
+            None,
+        )
+        // WSASend(
+        //     a.as_raw_socket() as usize,
+        //     &wsabuf,
+        //     1,
+        //     &mut lpnumberofbytessent as _,
+        //     0,
+        //     &mut ovlp as _,
+        //     None,
+        // )
+    };
+    let err = unsafe { GetLastError() };
+    println!(
+        "Status={status}, lpflags={lpflags} err={}({err})",
+        Error::last_os_error()
+    );
+    // assert!(status<0 && err.kind())
+    let r = unsafe {
+        GetQueuedCompletionStatusEx(
+            iocp,
+            buffer.as_mut_ptr() as _,
+            buffer.len() as _,
+            &mut nentries as _,
+            100 as _,
+            0,
+        )
+    };
+    assert!(r != 0 || Error::last_os_error().kind() == ErrorKind::TimedOut);
 
     let msg = ['a' as u8, 'b' as u8, 'c' as u8, 'd' as u8];
     println!(
@@ -293,19 +393,82 @@ pub fn main() {
         std::str::from_utf8(&msg).unwrap()
     );
 
-    let msg = ['0' as u8, '1' as u8, '2' as u8, '3' as u8];
+    let msg = ['O' as u8, 'k' as u8, '!' as u8];
+    println!(
+        "B wrote {} bytes: {:?}",
+        b.write(&msg).unwrap(),
+        std::str::from_utf8(&msg).unwrap()
+    );
+    let msg = ['D' as u8, 'o' as u8, 'n' as u8, 'e' as u8];
     println!(
         "B wrote {} bytes: {:?}",
         b.write(&msg).unwrap(),
         std::str::from_utf8(&msg).unwrap()
     );
 
-    let mut msg = ['a' as u8, 'a' as u8, 'a' as u8, 'a' as u8];
-    println!(
-        "A read {} bytes: {:?}",
-        a.read(&mut msg).unwrap(),
-        std::str::from_utf8(&msg).unwrap()
-    );
+    // let r = unsafe {
+    //     GetQueuedCompletionStatusEx(
+    //         iocp,
+    //         buffer.as_mut_ptr() as _,
+    //         buffer.len() as _,
+    //         &mut nentries as _,
+    //         100 as _,
+    //         0,
+    //     )
+    // };
+    // assert!(r == 1);
+    // for c in 0..r {
+    //     println!(
+    //         "Completion: {:?} socker={} overlapped-addr={:?}",
+    //         buffer[c as usize],
+    //         a.as_raw_socket(),
+    //         &ovlp1 as *const OVERLAPPED as *const libc::c_void
+    //     )
+    // }
+    // println!(
+    //     "A read {} bytes: {:?} (r={r})",
+    //     '?',
+    //     std::str::from_utf8(&wasmsg).unwrap()
+    // );
+
+    let mut remaining = 2;
+    while remaining > 0 {
+        let r = unsafe {
+            GetQueuedCompletionStatusEx(
+                iocp,
+                buffer.as_mut_ptr() as _,
+                buffer.len() as _,
+                &mut nentries as _,
+                1000 as _,
+                0,
+            )
+        };
+        assert!(r == 1);
+        println!(
+            "Socket={}, ov1={:?}, ov2={:?}",
+            a.as_raw_socket(),
+            &ovlp1 as *const OVERLAPPED as *const libc::c_void,
+            &ovlp2 as *const OVERLAPPED as *const libc::c_void
+        );
+        for c in 0..nentries {
+            println!("Completion[{c}]: {:?}", buffer[c as usize],);
+            remaining -= 1;
+            let n = buffer[c as usize].0.dwNumberOfBytesTransferred as usize;
+            let buf = if buffer[c as usize].0.lpOverlapped == &mut ovlp1 {
+                std::str::from_utf8(&wasmsg).unwrap()
+            } else {
+                std::str::from_utf8(&wasmsg2).unwrap()
+            };
+
+            println!("A read {} bytes: {:?} (r={r})", n, &buf[..n]);
+        }
+    }
+    // let mut msg = ['a' as u8, 'a' as u8, 'a' as u8, 'a' as u8];
+    // println!(
+    //     "A read {} bytes: {:?}",
+    //     a.read(&mut msg).unwrap(),
+    //     std::str::from_utf8(&msg).unwrap()
+    // );
 
     println!(
         "a:{:?}, b:{:?}",
