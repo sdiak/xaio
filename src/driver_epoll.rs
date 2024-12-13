@@ -32,7 +32,7 @@ impl DriverEPoll {
         real_config.max_number_of_fd_hint = num::clamp(config.max_number_of_fd_hint, 1, 1000000);
         let epollfd: libc::c_int =
             if (real_config.flags & DriverFlags::ATTACH_HANDLE.bits()) != 0u32 {
-                let epollfd = config.attach_handle as _;
+                let epollfd = config.attach_handle as _; // TODO: dup() Reflect on the semantic of attach (epoll/kqueue/... => same events, iouring => shared kernel workers )
                 if epollfd <= 0 {
                     return Err(Error::from(ErrorKind::InvalidInput));
                 }
