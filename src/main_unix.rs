@@ -8,7 +8,7 @@ pub fn main() {
     println!("{driver:?}");
     let mut ready = RequestList::new();
     driver.wake().unwrap();
-    (*driver).wait(-1, &mut ready).unwrap();
+    (*driver).wait(&mut ready, -1).unwrap();
 
     // let (mut a, mut b) = xaio::socketpair(socket2::Type::STREAM, None).unwrap();
     // println!("({a:?}, {b:?})");

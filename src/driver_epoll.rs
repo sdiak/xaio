@@ -109,8 +109,8 @@ impl DriverIFace for DriverEPoll {
     }
     fn wait(
         &mut self,
-        timeout_ms: i32,
         _ready_list: &mut crate::RequestList,
+        timeout_ms: i32,
     ) -> std::io::Result<i32> {
         // if self.npending_events == 0 {
         //     timeout_ms = 0;
