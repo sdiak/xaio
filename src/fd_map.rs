@@ -1,7 +1,9 @@
+#[cfg(target_family = "windows")]
+use std::os::windows::io::FromRawSocket;
 use std::{
     io::{Error, ErrorKind, Result},
     mem::{ManuallyDrop, MaybeUninit},
-    os::windows::io::FromRawSocket,
+    os::fd::FromRawFd,
     ptr::NonNull,
 };
 
@@ -16,6 +18,11 @@ use crate::{request, selector::Interest, ReadyList, Request, RequestList, Reques
 type Fd = libc::c_int;
 #[cfg(target_os = "windows")]
 type Fd = usize;
+
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+const MSG_DONTWAIT: libc::c_int = libc::MSG_DONTWAIT as _;
+#[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+const MSG_DONTWAIT: libc::c_int = 0 as _;
 
 pub(crate) struct FdMap {
     entries: FxHashMap<Fd, Entry>,
@@ -85,15 +92,14 @@ impl PendingOps {
     }
     /// Apply the events to the given request and returns `true` if the request is still running
     fn apply_event(req: &mut Request, events: &mut i32) -> bool {
-        #[cfg(has_libc_MSG_DONTWAIT)]
-        let flags = libc::MSG_DONTWAIT;
-        #[cfg(not(has_libc_MSG_DONTWAIT))]
-        let flags = 0;
-
         let opcode = req.opcode_raw();
         let sockop = unsafe { &mut req.op.socket };
+        #[cfg(target_family = "unix")]
+        let socket = ManuallyDrop::new(unsafe { Socket::from_raw_fd(sockop.socket.inner as _) });
+        #[cfg(target_family = "windows")]
         let socket =
             ManuallyDrop::new(unsafe { Socket::from_raw_socket(sockop.socket.inner as _) });
+
         let rbuffer = unsafe {
             std::slice::from_raw_parts_mut::<MaybeUninit<u8>>(
                 std::mem::transmute::<*mut u8, *mut MaybeUninit<u8>>(
@@ -118,9 +124,9 @@ impl PendingOps {
                 };
                 loop {
                     let status = if opcode == request::OP_SOCKET_RECV {
-                        socket.recv_with_flags(rbuffer, flags)
+                        socket.recv_with_flags(rbuffer, MSG_DONTWAIT)
                     } else {
-                        socket.send_with_flags(wbuffer, flags)
+                        socket.send_with_flags(wbuffer, MSG_DONTWAIT)
                     };
                     match status {
                         Ok(sz) => {

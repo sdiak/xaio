@@ -13,7 +13,7 @@ pub fn main() {
     let sub = unsafe { std::ptr::NonNull::new_unchecked(&mut req as *mut Request) };
     let sub2 = sub;
     println!("{sub:?}/{sub2:?}");
-    unsafe { driver.submit(sub).unwrap() };
+    // unsafe { driver.submit(sub).unwrap() };
     // let (mut a, mut b) = xaio::socketpair(socket2::Type::STREAM, None).unwrap();
     // println!("({a:?}, {b:?})");
 

@@ -3,6 +3,7 @@ name = "xaio"
 version = "0.1.0"
 edition = "2021"
 crate-type   = ["rlib", "cdylib", "lib"]
+rust-version = "1.83.0"
 # https://lib.rs/crates/cargo-llvm-cov#readme-installation
 
 [lib]
@@ -10,7 +11,7 @@ name="xaio"
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-libc = "0.2.167"
+libc = "0.2"
 enum_dispatch = "0.3.13"
 bitflags = "2.6.0"
 log = "0.4.22"
@@ -39,5 +40,7 @@ features = [
 
 
 [build-dependencies]
+libc = "0.2"
+# cc = "1.2"
 cbindgen = "0.27.0"
-autocfg = "1.4.0"
+# autocfg = "1.4"

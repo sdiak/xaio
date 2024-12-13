@@ -1,12 +1,13 @@
-extern crate autocfg;
+// extern crate autocfg;
 extern crate cbindgen;
-
 use std::env;
 
 #[allow(clippy::field_reassign_with_default)]
 fn main() {
-    let ac = autocfg::new();
-    ac.emit_expression_cfg("libc::MSG_DONTWAIT", "has_libc_MSG_DONTWAIT");
+    // cc::Build::new()
+    //     .file("src/build/probe.c") /* .file("bar.c")*/
+    //     .compile("foo");
+    // let ac = autocfg::new();
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let mut config: cbindgen::Config = Default::default();
     config.language = cbindgen::Language::C;
@@ -44,5 +45,11 @@ fn main() {
         .generate()
         .expect("Unable to generate bindings")
         .write_to_file("include/xaio.h");
-    autocfg::rerun_path("build.rs");
+    // ac.emit_constant_cfg("libc::MSG_DONTWAIT", "has_libc_MSG_DONTWAIT"); // libc::MSG_DONTWAIT
+    // ac.probe_raw("extern crate  libc; pub const PROBE: () = ((), libc::MSG_DONTWAIT).0;")
+    //     .unwrap();
+    // if ac.probe_raw("fn main() {}").is_ok() {
+    //     autocfg::emit("has_libc_MSG_DONTWAIT");
+    // }
+    // autocfg::rerun_path("build.rs");
 }
