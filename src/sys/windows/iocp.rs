@@ -54,6 +54,7 @@ impl IoCompletionPort {
     pub fn bind_event(&mut self, event: &Event) {
         let events = self.bound_events.lock();
         // events.
+        todo!();
     }
 
     pub fn get_native_handle(&self) -> HANDLE {
