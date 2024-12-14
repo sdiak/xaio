@@ -5,6 +5,7 @@ use crate::{
 use std::{
     fmt::Debug,
     io::{Error, ErrorKind, Result},
+    os::fd::{AsRawFd, FromRawFd, OwnedFd},
     sync::Arc,
 };
 
@@ -14,28 +15,17 @@ use std::{
 #[repr(C)]
 #[derive(Debug)]
 pub struct Event {
-    handle: Arc<Inner>,
+    handle: Arc<OwnedFd>,
 }
 impl PartialEq for Event {
     fn eq(&self, other: &Self) -> bool {
-        self.handle.fd == other.handle.fd
+        self.handle.as_raw_fd() == other.handle.as_raw_fd()
     }
 }
 impl Eq for Event {}
 impl std::hash::Hash for Event {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.handle.fd.hash(state);
-    }
-}
-
-#[repr(C)]
-#[derive(Debug)]
-struct Inner {
-    fd: libc::c_int,
-}
-impl Drop for Inner {
-    fn drop(&mut self) {
-        libc_close_log_on_error(self.fd);
+        self.handle.as_raw_fd().hash(state);
     }
 }
 
@@ -52,7 +42,7 @@ impl Event {
         let fd = unsafe { libc::eventfd(0, libc::EFD_CLOEXEC | libc::EFD_NONBLOCK) };
         if fd >= 0 {
             Ok(Self {
-                handle: Arc::new(Inner { fd }),
+                handle: Arc::new(unsafe { OwnedFd::from_raw_fd(fd) }),
             })
         } else {
             Err(Error::last_os_error())
@@ -61,17 +51,17 @@ impl Event {
     /// Notify a waiter (multiple notification may be coalesced into one)
     pub fn notify(&self) -> Result<()> {
         let unpark_msg = 1u64.to_ne_bytes();
-        libc_write_all(self.handle.fd, &unpark_msg, true)
+        libc_write_all(self.handle.as_raw_fd(), &unpark_msg, true)
     }
 
     #[inline]
     pub(crate) unsafe fn get_native_handle(&self) -> libc::c_int {
-        self.handle.fd
+        self.handle.as_raw_fd()
     }
 
     /// Waits for the event to be notified or for `timeout_ms` milliseconds
     pub fn wait(&self, timeout_ms: i32) -> Result<()> {
-        let fd = self.handle.fd;
+        let fd = self.handle.as_raw_fd();
         let mut buffer = 0u64.to_ne_bytes();
 
         let pollfd = &mut [rawpoll::PollFD::new(RawSocketFd::new(fd), rawpoll::POLLIN)];
