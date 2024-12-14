@@ -93,8 +93,6 @@ pub struct FileIORequest {
     pub(crate) fd: RawFd,
     /// Amount of read or write to do
     pub(crate) todo: u32,
-    /// Amount of read or write really done
-    pub(crate) done: u32,
     /// File position
     pub(crate) offset: u64,
     /// The read or write buffer
