@@ -1,4 +1,4 @@
-use std::{ptr::NonNull, sync::atomic::Ordering};
+use std::{os::fd::RawFd, ptr::NonNull, sync::atomic::Ordering};
 
 use crate::{selector::Interest, RawSocketFd};
 
@@ -13,10 +13,13 @@ pub enum OpCode {
     NOOP, // **MUST** be first and `0`
     /// Socket poll
     SOCKET_POLL,
-    /// Socket read
+    /// Socket recv
     SOCKET_RECV,
     /// Socket send
     SOCKET_SEND,
+
+    FILE_READ,
+    FILE_WRITE,
     /// An invalid op-code
     INVALID, // **MUST** be last
 }
@@ -43,6 +46,8 @@ pub(crate) const OP_SOCKET_POLL: u8 = OpCode::SOCKET_POLL as _;
 pub(crate) const OP_SOCKET_RECV: u8 = OpCode::SOCKET_RECV as _;
 pub(crate) const OP_SOCKET_SEND: u8 = OpCode::SOCKET_SEND as _;
 const _OP_SOCKET_END: u8 = OpCode::SOCKET_SEND as _;
+pub(crate) const OP_FILE_READ: u8 = OpCode::FILE_READ as _;
+pub(crate) const OP_FILE_WRITE: u8 = OpCode::FILE_WRITE as _;
 
 #[repr(C)]
 // #[derive(Clone)]
@@ -81,11 +86,26 @@ pub struct SocketRequest {
     /// The read or write buffer
     pub(crate) buffer: *mut u8,
 }
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct FileIORequest {
+    /// The fd
+    pub(crate) fd: RawFd,
+    /// Amount of read or write to do
+    pub(crate) todo: u32,
+    /// Amount of read or write really done
+    pub(crate) done: u32,
+    /// File position
+    pub(crate) offset: u64,
+    /// The read or write buffer
+    pub(crate) buffer: *mut u8,
+}
 
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub union RequestData {
     pub(crate) socket: SocketRequest,
+    pub(crate) file_io: FileIORequest,
 }
 
 #[repr(C)]
@@ -134,6 +154,7 @@ impl Request {
     }
 
     #[inline(always)]
+    #[allow(clippy::manual_range_contains)]
     pub fn is_a_socket_op(&self) -> bool {
         let opcode: u8 = self.opcode_raw();
         _OP_SOCKET_START <= opcode && opcode <= _OP_SOCKET_END

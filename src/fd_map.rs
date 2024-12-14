@@ -1,17 +1,14 @@
 use std::{
     io::{Error, ErrorKind, Result},
     mem::{ManuallyDrop, MaybeUninit},
-    ops::{Deref, DerefMut},
-    os::fd::FromRawFd,
+    ops::Deref,
     ptr::NonNull,
 };
 
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use socket2::Socket;
 
-use crate::{request, selector::Interest, ReadyList, Request, RequestList, RequestOrd};
-
-// TODO: replace pin with addr
+use crate::{request, selector::Interest, ReadyList, Request, RequestList};
 
 #[cfg(not(target_os = "windows"))]
 type Fd = libc::c_int;

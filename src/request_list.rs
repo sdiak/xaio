@@ -38,21 +38,27 @@ impl RequestList {
     }
 
     /// O(1)
+    /// # Safety
+    ///  - node must remain live as long as it's stored in self
     pub unsafe fn push_front(&mut self, node: *mut Request) {
         debug_assert!(!node.is_null());
         (*node).list_set_next(self.head, Ordering::Relaxed);
         self.head = node;
     }
     /// O(1)
-    pub unsafe fn pop_front(&mut self) -> *mut Request {
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
+    pub fn pop_front(&mut self) -> *mut Request {
         if self.head.is_null() {
             ptr::null_mut()
         } else {
-            let old_head = self.head;
-            self.head = (*old_head).list_pop_next(Ordering::Relaxed);
-            old_head
+            unsafe {
+                let old_head = self.head;
+                self.head = (*old_head).list_pop_next(Ordering::Relaxed);
+                old_head
+            }
         }
     }
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn contains(&self, node: *const Request) -> bool {
         if node.is_null() || !(unsafe { (*node).in_a_list() }) {
             return false;
@@ -66,12 +72,13 @@ impl RequestList {
         }
         false
     }
-    pub unsafe fn remove(&mut self, node: *mut Request) -> bool {
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
+    pub fn remove(&mut self, node: *mut Request) -> bool {
         if node.is_null() || !(unsafe { (*node).in_a_list() }) {
             return false;
         }
         if node == self.head {
-            self.pop_front();
+            unsafe { self.pop_front() };
             return true;
         }
         let mut prev: *mut Request = self.head;
@@ -93,6 +100,8 @@ impl RequestList {
     }
 
     /// O(n)
+    /// # Safety
+    ///  - node must remain live as long as it's stored in self
     pub unsafe fn push_back2(&mut self, mut node: NonNull<Request>) {
         // Ensures in a single list at a given time
         node.as_mut()
@@ -111,6 +120,8 @@ impl RequestList {
     }
 
     /// O(n)
+    /// # Safety
+    ///  - node must remain live as long as it's stored in self
     pub unsafe fn push_back(&mut self, node: *mut Request) {
         debug_assert!(!node.is_null());
         // Ensures in a single list at a given time
@@ -129,6 +140,8 @@ impl RequestList {
     }
 
     /// O(n)
+    /// # Safety
+    ///  - node must remain live as long as it's stored in self
     pub unsafe fn insert_sorted<Sorter: RequestOrd>(&mut self, mut node: NonNull<Request>) {
         if self.head.is_null() || Sorter::before(node.as_ref(), self.head) {
             // Ensures in a single list at a given time
@@ -183,7 +196,7 @@ impl RequestList {
             prev = it;
             it = unsafe { (*it).list_get_next(Ordering::Relaxed) };
         }
-        return removed;
+        removed
     }
     // /// O(n)
     // unsafe fn pop_back(&mut self) -> *mut Request {

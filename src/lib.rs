@@ -5,6 +5,7 @@ mod driver;
 mod driver_none;
 mod driver_uring;
 mod fd_map;
+mod file;
 mod ready_list;
 mod request;
 mod request_list;

@@ -2,7 +2,6 @@
 name = "xaio"
 version = "0.1.0"
 edition = "2021"
-crate-type   = ["rlib", "cdylib", "lib"]
 rust-version = "1.83.0"
 # https://lib.rs/crates/cargo-llvm-cov#readme-installation
 
