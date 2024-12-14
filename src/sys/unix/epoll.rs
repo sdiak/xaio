@@ -52,7 +52,7 @@ impl EPoll {
 
     fn epoll_ctl(&self, fd: RawFd, op: libc::c_int, events: u32, token: usize) -> Result<()> {
         let mut event = libc::epoll_event {
-            events,
+            events: events & !Interest::ONESHOT.bits(),
             u64: token as u64,
         };
         if unsafe { libc::epoll_ctl(self.epfd.as_raw_fd(), op, fd, &mut event as _) } >= 0 {

@@ -19,6 +19,6 @@ bitflags! {
         const RDHANG_UP = 0x2000u32;
 
         // Removes the registration after the first event
-        const ONESHOT = 0x010u32;
+        const ONESHOT = 0x8000u32;
     }
 }
