@@ -46,10 +46,12 @@ impl Event {
     pub fn new() -> Result<Self> {
         let (read_end, write_end) = libc_pipe2(true, true)?;
         Ok(Self {
-            handle: Arc::new(Inner {
-                read_end: unsafe { OwnedFd::from_raw_fd(read_end) },
-                write_end: unsafe { OwnedFd::from_raw_fd(write_end) },
-            }),
+            handle: crate::catch_enomem(|| {
+                Arc::new(Inner {
+                    read_end: unsafe { OwnedFd::from_raw_fd(read_end) },
+                    write_end: unsafe { OwnedFd::from_raw_fd(write_end) },
+                })
+            })?,
         })
     }
     /// Notify a waiter (multiple notification may be coalesced into one)

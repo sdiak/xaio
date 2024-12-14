@@ -42,7 +42,7 @@ impl Event {
         let fd = unsafe { libc::eventfd(0, libc::EFD_CLOEXEC | libc::EFD_NONBLOCK) };
         if fd >= 0 {
             Ok(Self {
-                handle: Arc::new(unsafe { OwnedFd::from_raw_fd(fd) }),
+                handle: crate::catch_enomem(|| Arc::new(unsafe { OwnedFd::from_raw_fd(fd) }))?,
             })
         } else {
             Err(Error::last_os_error())

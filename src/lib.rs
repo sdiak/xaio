@@ -93,3 +93,11 @@ mod tests {
         assert_eq!(result, 4);
     }
 }
+
+fn catch_enomem<C, T>(constructor: C) -> std::io::Result<T>
+where
+    C: FnOnce() -> T + std::panic::UnwindSafe,
+{
+    std::panic::catch_unwind(constructor)
+        .map_err(|_| std::io::Error::from(std::io::ErrorKind::OutOfMemory))
+}
