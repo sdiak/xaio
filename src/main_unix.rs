@@ -2,6 +2,10 @@ use xaio::{Driver, DriverConfig, DriverIFace, DriverKind, Request, RequestList};
 
 pub fn main() {
     println!("Hello unix");
+    println!(
+        "sys::current_thread(): {:?}",
+        xaio::sys::get_current_thread_id()
+    );
     let config = DriverConfig::default();
     let mut driver = Driver::new(DriverKind::EPoll, &config).unwrap();
     println!("{driver:?}");
@@ -52,4 +56,39 @@ pub fn main() {
     // );
 
     println!("\nSizeof Request: {}", std::mem::size_of::<Request>());
+    println!(
+        "sys::current_thread(): {:?}",
+        xaio::sys::get_current_thread_id()
+    );
+    let handles = vec![
+        std::thread::spawn(|| {
+            println!(
+                " - sys::current_thread(): {:?}",
+                xaio::sys::get_current_thread_id()
+            );
+        }),
+        std::thread::spawn(|| {
+            println!(
+                " - sys::current_thread(): {:?}",
+                xaio::sys::get_current_thread_id()
+            );
+        }),
+        std::thread::spawn(|| {
+            println!(
+                " - sys::current_thread(): {:?}",
+                xaio::sys::get_current_thread_id()
+            );
+        }),
+        std::thread::spawn(|| {
+            let id = xaio::sys::get_current_thread_id();
+            println!(
+                " - sys::current_thread(): {:?} ({})",
+                id,
+                id == xaio::sys::get_current_thread_id()
+            );
+        }),
+    ];
+    for h in handles {
+        h.join().unwrap();
+    }
 }

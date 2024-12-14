@@ -27,3 +27,28 @@ mod windows;
 pub use windows::*;
 
 pub mod poll;
+
+#[cfg(all(
+    target_arch = "x86_64",
+    any(target_os = "linux", target_os = "freebsd")
+))]
+#[inline(always)]
+pub fn get_current_thread_id() -> usize {
+    use std::arch::asm;
+    let mut id = 0usize;
+    unsafe {
+        asm!(
+            "mov {id}, fs:0",
+            id = out(reg) id,
+        );
+    }
+    id as _
+}
+#[cfg(not(all(
+    target_arch = "x86_64",
+    any(target_os = "linux", target_os = "freebsd")
+)))]
+#[inline(always)]
+pub fn get_current_thread_id() -> std::thread::ThreadId {
+    std::thread::current().id()
+}

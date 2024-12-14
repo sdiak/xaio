@@ -29,7 +29,7 @@ impl ReadyList {
     pub(crate) fn alloc_and_pushback(&self, model: &Request, status: i32) -> bool {
         // TODO:
         let mut new_tail = Request::default();
-        new_tail.status = status;
+        new_tail.set_status_local(status);
         false
     }
 
@@ -56,7 +56,9 @@ impl ReadyList {
     }
 
     pub(crate) unsafe fn push_back(&mut self, new_tail: *mut Request) {
-        assert!(!new_tail.is_null() && (*new_tail).status != request::PENDING);
+        assert!(
+            !new_tail.is_null() && (*new_tail).status.load(Ordering::Relaxed) != request::PENDING
+        );
         (*new_tail).list_set_next(std::ptr::null_mut(), Ordering::Relaxed);
         if self.tail.is_null() {
             self.head = new_tail;

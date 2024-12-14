@@ -91,7 +91,7 @@ where
         unsafe { req.op.socket.done += status as u32 };
         if unsafe { req.op.socket.done >= req.op.socket.todo } {
             // DONE: return the request to user
-            req.status = unsafe { req.op.socket.done } as _;
+            req.set_status_local(unsafe { req.op.socket.done } as _);
             false
         } else {
             // Still some work to do
@@ -106,7 +106,7 @@ where
         *events |= Interest::ERROR.bits() as i32;
         *poll_events |= Interest::ERROR.bits() as i32;
         // DONE: return the request to user
-        req.status = status;
+        req.set_status_local(status);
         false
     }
 }
@@ -186,11 +186,11 @@ impl PendingOps {
             } else if is_poll_op && op_poll_events != 0 {
                 if (interests & Interest::ONESHOT.bits() as i32) != 0 {
                     // Success one-shot, set the status and returns to user
-                    req.status = op_poll_events;
+                    req.set_status_local(op_poll_events);
                     false
                 } else if !ready.alloc_and_pushback(req, op_poll_events) {
                     // Failed to allocate a multishot event, return the registration with an error
-                    req.status = -libc::ENOMEM;
+                    req.set_status_local(-libc::ENOMEM);
                     false
                 } else {
                     // Multi-shot "instance" pushed to `ready`, keep the registration

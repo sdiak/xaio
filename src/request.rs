@@ -1,9 +1,13 @@
 use std::{os::fd::RawFd, ptr::NonNull, sync::atomic::Ordering};
 
+use libc::stat;
+
 use crate::{selector::Interest, RawSocketFd};
 
 pub(super) const PENDING: i32 = i32::MIN;
 pub(super) const UNKNOWN: i32 = i32::MIN + 1;
+
+pub(super) const FLAG_CONCURRENT: u32 = 1u32 << 8;
 
 #[repr(u8)]
 #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
@@ -52,14 +56,14 @@ pub(crate) const OP_FILE_WRITE: u8 = OpCode::FILE_WRITE as _;
 #[repr(C)]
 // #[derive(Clone)]
 pub struct Request {
-    #[cfg(target_os = "windows")]
-    win_header: windows_sys::Win32::System::IO::OVERLAPPED,
+    #[cfg(target_family = "windows")]
+    _win_header: windows_sys::Win32::System::IO::OVERLAPPED,
+    #[cfg(target_family = "unix")]
+    _unix_header: *const crate::request_queue::RequestQueue,
     // prv__cp: *mut xcp_s,
     // pub(crate) owner: Option<RefCell<RingInner>>,
     // request status
-    pub(crate) status: i32,
-    // reques status set by a concurrent thread
-    pub(crate) concurrent_status: std::sync::atomic::AtomicI32,
+    pub(crate) status: std::sync::atomic::AtomicI32,
     flags_and_op_code: u32,
     list_next: std::sync::atomic::AtomicUsize,
     pub(crate) op: RequestData,
@@ -173,6 +177,55 @@ impl Request {
         })
     }
 
+    #[cfg(target_os = "windows")]
+    fn completion_queue_when_concurrent_ptr(&self) -> *const crate::request_queue::RequestQueue {
+        self._win_header.hEvent as *const crate::request_queue::RequestQueue
+    }
+    #[cfg(not(target_os = "windows"))]
+    fn completion_queue_when_concurrent_ptr(&self) -> *const crate::request_queue::RequestQueue {
+        self._unix_header
+    }
+
+    unsafe fn completion_queue_when_concurrent(&mut self) -> &crate::request_queue::RequestQueue {
+        unsafe { &*self.completion_queue_when_concurrent_ptr() }
+    }
+
+    #[inline]
+    pub(crate) fn is_concurrent(&self) -> bool {
+        (self.flags_and_op_code & FLAG_CONCURRENT) == 0
+            && !self.completion_queue_when_concurrent_ptr().is_null()
+    }
+    #[inline]
+    pub(crate) fn set_status_local(&mut self, status: i32) -> bool {
+        assert!(status != PENDING && (self.flags_and_op_code & FLAG_CONCURRENT) == 0);
+        if self.status.load(Ordering::Relaxed) == PENDING {
+            self.status.store(status, Ordering::Relaxed);
+            true
+        } else {
+            false
+        }
+    }
+    #[inline]
+    pub(crate) unsafe fn set_status_concurrent(thiz: NonNull<Request>, status: i32) -> bool {
+        assert!(status != PENDING && (thiz.as_ref().flags_and_op_code & FLAG_CONCURRENT) != 0);
+        let thiz = thiz.as_ptr();
+        let set = (*thiz)
+            .status
+            .compare_exchange(PENDING, status, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok();
+        (*thiz).completion_queue_when_concurrent().push(thiz);
+        set
+    }
+    pub(crate) fn cancel(&mut self, status: i32) -> bool {
+        assert!(status < 0);
+        if (self.flags_and_op_code & FLAG_CONCURRENT) == 0 {
+            self.status
+                .compare_exchange(PENDING, status, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+        } else {
+            self.set_status_local(status)
+        }
+    }
     // }
     /*
     pub fn set_status(self, status: i32) -> bool {
@@ -207,3 +260,5 @@ impl Request {
     }
     */
 }
+
+unsafe impl Send for Request {}

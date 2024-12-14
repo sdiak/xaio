@@ -24,9 +24,7 @@ impl RequestQueue {
     /// # Arguments
     ///   - `req` The completed request.
     pub(crate) unsafe fn push(&self, req: *mut Request) {
-        assert!(
-            !req.is_null() && (*req).concurrent_status.load(Ordering::Relaxed) != request::PENDING
-        );
+        assert!(!req.is_null() && (*req).status.load(Ordering::Relaxed) != request::PENDING);
         // Ensures in a single list at a given time
         (*req).list_set_next(std::ptr::null_mut(), Ordering::Relaxed);
         let mut old_tail = self.tail.load(Ordering::Acquire);
@@ -95,10 +93,6 @@ impl RequestQueue {
         let mut prev = std::ptr::null_mut::<Request>();
         while !head.is_null() {
             len += 1;
-            unsafe {
-                // SAFETY: called from request owner thread
-                (*head).status = (*head).concurrent_status.load(Ordering::Relaxed);
-            }
             let next = unsafe { (*head).list_get_next(Ordering::Relaxed) };
             unsafe { (*head).list_update_next(prev, Ordering::Relaxed) };
             prev = head;
@@ -117,8 +111,6 @@ mod test {
     use std::{sync::Arc, thread};
 
     use super::*;
-
-    unsafe impl Send for Request {}
 
     #[test]
     fn test_not_parked() {

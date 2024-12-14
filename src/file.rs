@@ -22,32 +22,28 @@ where
     }
 }
 
-pub(crate) fn file_io(req: &mut Request, ready: &mut ReadyList) {
-    if req.concurrent_status.load(Ordering::Relaxed) != request::PENDING {
-        return; // Canceled or Timedout
-    }
-    let status = match req.opcode_raw() {
-        request::OP_FILE_READ => _file_io_sync(req, File::read_exact_at),
-        request::OP_FILE_WRITE => {
-            _file_io_sync(req, |file, buf, offset| file.write_all_at(buf, offset))
-        }
-        _ => {
-            panic!("Unknown operation type : {:?}", req.opcode());
-        }
-    };
-    assert!(status != request::PENDING);
-    loop {
-        match req.concurrent_status.compare_exchange_weak(
-            request::PENDING,
-            status,
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-        ) {
-            Err(curent) if curent == request::PENDING => {}
-            _ => {
-                // Canceled or Timedout
-                break;
-            }
-        }
-    }
+pub fn file_io_read_sync(req: &mut Request) -> i32 {
+    _file_io_sync(req, File::read_exact_at)
 }
+
+pub fn file_io_write_sync(req: &mut Request) -> i32 {
+    _file_io_sync(req, |file, buf, offset| file.write_all_at(buf, offset))
+}
+
+// pub(crate) fn file_io(req: &mut Request, ready: &mut ReadyList) -> i32 {
+//     let status = req.status.load(Ordering::Relaxed);
+//     if status != request::PENDING {
+//         return status; // Canceled or Timedout
+//     }
+//     let status = match req.opcode_raw() {
+//         request::OP_FILE_READ => _file_io_sync(req, File::read_exact_at),
+//         request::OP_FILE_WRITE => {
+//             _file_io_sync(req, |file, buf, offset| file.write_all_at(buf, offset))
+//         }
+//         _ => {
+//             panic!("Unknown operation type : {:?}", req.opcode());
+//         }
+//     };
+//     assert!(status != request::PENDING);
+//     status
+// }
