@@ -39,7 +39,8 @@ pub fn get_current_thread_id() -> usize {
     unsafe {
         asm!(
             "mov {id}, fs:0",
-            id = out(reg) id,
+            id = lateout(reg) id,
+            options(nostack, pure, readonly),
         );
     }
     id as _
