@@ -1,8 +1,7 @@
-#[cfg(target_family = "windows")]
-use std::os::windows::io::FromRawSocket;
 use std::{
     io::{Error, ErrorKind, Result},
     mem::{ManuallyDrop, MaybeUninit},
+    ops::{Deref, DerefMut},
     os::fd::FromRawFd,
     ptr::NonNull,
 };
@@ -18,11 +17,6 @@ use crate::{request, selector::Interest, ReadyList, Request, RequestList, Reques
 type Fd = libc::c_int;
 #[cfg(target_os = "windows")]
 type Fd = usize;
-
-#[cfg(any(target_os = "linux", target_os = "freebsd"))]
-const MSG_DONTWAIT: libc::c_int = libc::MSG_DONTWAIT as _;
-#[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
-const MSG_DONTWAIT: libc::c_int = 0 as _;
 
 pub(crate) struct FdMap {
     entries: FxHashMap<Fd, Entry>,
@@ -74,13 +68,94 @@ impl FdMap {
 struct PendingOps {
     pending: RequestList,
 }
-// impl RequestOrd for PendingOps {
-//     fn before(a: &Request, b: *const Request) -> bool {
-//         b.is_null()
-//             || (a.opcode_raw() == request::OP_SOCKET_POLL
-//                 && unsafe { (*b).opcode_raw() != request::OP_SOCKET_POLL })
-//     }
-// }
+
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+const _MSG_DONTWAIT: libc::c_int = libc::MSG_DONTWAIT as _;
+#[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+const _MSG_DONTWAIT: libc::c_int = 0 as _;
+
+/// Perform the given operation `f`
+/// # Returns
+/// `true` when the request should be polled again
+fn _socket_req_resume<F>(req: &mut Request, poll_events: &mut i32, events: &mut i32, f: F) -> bool
+where
+    F: FnOnce(&Socket, &mut [u8], &mut i32) -> i32,
+{
+    let socket = req.get_socket();
+    let buffer = unsafe {
+        std::slice::from_raw_parts_mut::<u8>(
+            req.op.socket.buffer.offset(req.op.socket.done as _),
+            (req.op.socket.todo - req.op.socket.done) as _,
+        )
+    };
+
+    let status = f(ManuallyDrop::deref(&socket), buffer, events);
+    if (status >= 0) {
+        unsafe { req.op.socket.done += status as u32 };
+        if unsafe { req.op.socket.done >= req.op.socket.todo } {
+            // DONE: return the request to user
+            req.status = unsafe { req.op.socket.done } as _;
+            false
+        } else {
+            // Still some work to do
+            true
+        }
+    } else {
+        // No more data to read on the socket
+        *events &= !Interest::READABLE.bits() as i32;
+        // No more data to write on the socket
+        *events &= !Interest::WRITABLE.bits() as i32;
+        // Socket has error
+        *events |= Interest::ERROR.bits() as i32;
+        *poll_events |= Interest::ERROR.bits() as i32;
+        // DONE: return the request to user
+        req.status = status;
+        false
+    }
+}
+
+fn _socket_req_resume_recv(socket: &Socket, buffer: &mut [u8], events: &mut i32) -> i32 {
+    let buffer = unsafe { std::mem::transmute::<&mut [u8], &mut [MaybeUninit<u8>]>(buffer) };
+    loop {
+        match socket.recv_with_flags(buffer, _MSG_DONTWAIT) {
+            Ok(len) => {
+                return len as i32;
+            }
+            Err(err) => match err.kind() {
+                ErrorKind::Interrupted => {}
+                ErrorKind::WouldBlock => {
+                    // No more data to read on the socket
+                    *events &= !Interest::READABLE.bits() as i32;
+                    return 0;
+                }
+                _ => {
+                    return -crate::utils::io_error_to_errno_constant(&err);
+                }
+            },
+        }
+    }
+}
+fn _socket_req_resume_send(socket: &Socket, buffer: &mut [u8], events: &mut i32) -> i32 {
+    loop {
+        match socket.send_with_flags(buffer, _MSG_DONTWAIT) {
+            Ok(len) => {
+                return len as i32;
+            }
+            Err(err) => match err.kind() {
+                ErrorKind::Interrupted => {}
+                ErrorKind::WouldBlock => {
+                    // No more data to read on the socket
+                    *events &= !Interest::WRITABLE.bits() as i32;
+                    return 0;
+                }
+                _ => {
+                    return -crate::utils::io_error_to_errno_constant(&err);
+                }
+            },
+        }
+    }
+}
+
 impl PendingOps {
     pub(crate) fn add(&mut self, req: NonNull<Request>) {
         unsafe {
@@ -90,91 +165,27 @@ impl PendingOps {
             self.pending.push_back2(req);
         }
     }
-    /// Apply the events to the given request and returns `true` if the request is still running
-    fn apply_event(req: &mut Request, events: &mut i32) -> bool {
-        let opcode = req.opcode_raw();
-        let sockop = unsafe { &mut req.op.socket };
-        #[cfg(target_family = "unix")]
-        let socket = ManuallyDrop::new(unsafe { Socket::from_raw_fd(sockop.socket.inner as _) });
-        #[cfg(target_family = "windows")]
-        let socket =
-            ManuallyDrop::new(unsafe { Socket::from_raw_socket(sockop.socket.inner as _) });
-
-        let rbuffer = unsafe {
-            std::slice::from_raw_parts_mut::<MaybeUninit<u8>>(
-                std::mem::transmute::<*mut u8, *mut MaybeUninit<u8>>(
-                    sockop.buffer.offset(sockop.done as _),
-                ),
-                (sockop.todo - sockop.done) as _,
-            )
-        };
-        let wbuffer = unsafe {
-            std::slice::from_raw_parts_mut::<u8>(
-                sockop.buffer.offset(sockop.done as _),
-                (sockop.todo - sockop.done) as _,
-            )
-        };
-        // TODO: how to handle multishot events !!!!!
-        match opcode {
-            request::OP_SOCKET_RECV | request::OP_SOCKET_SEND => {
-                let mask = if opcode == request::OP_SOCKET_RECV {
-                    !Interest::READABLE.bits()
-                } else {
-                    !Interest::WRITABLE.bits()
-                };
-                loop {
-                    let status = if opcode == request::OP_SOCKET_RECV {
-                        socket.recv_with_flags(rbuffer, MSG_DONTWAIT)
-                    } else {
-                        socket.send_with_flags(wbuffer, MSG_DONTWAIT)
-                    };
-                    match status {
-                        Ok(sz) => {
-                            sockop.done += sz as u32; // TODO: use concurrent_status
-                            if sockop.done == sockop.todo {
-                                // DONE: return the request to user
-                                req.status = sockop.todo as _;
-                                return false;
-                            } else {
-                                // No more event of the same type to try.
-                                *events &= mask as i32;
-                            }
-                            return true;
-                        }
-                        Err(err) => {
-                            match err.kind() {
-                                ErrorKind::WouldBlock => {
-                                    return true;
-                                }
-                                ErrorKind::Interrupted => {
-                                    // Try again
-                                }
-                                _ => {
-                                    // DONE: return the request to user
-                                    req.status = -crate::utils::io_error_to_errno_constant(&err);
-                                    return false;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            _ => {
-                panic!("Unknown opcode");
-            }
-        }
-        true
-    }
     pub(crate) fn process_event(&mut self, mut events: i32, ready: &mut ReadyList) {
         debug_assert!(!self.pending.is_empty());
-        let poll_events = events;
+        let mut poll_events = events;
         ready.push_back_all(&mut self.pending.retain_mut(|req| {
             let is_poll_op = req.opcode_raw() == request::OP_SOCKET_POLL;
             let interests = unsafe { req.op.socket.interests } as i32;
             let op_poll_events = interests & poll_events;
             // Safety all socket op share the same union field
             if !is_poll_op && (interests & events) != 0 {
-                PendingOps::apply_event(req, &mut events)
+                _socket_req_resume(
+                    req,
+                    &mut poll_events,
+                    &mut events,
+                    match req.opcode_raw() {
+                        request::OP_SOCKET_RECV => _socket_req_resume_recv,
+                        request::OP_SOCKET_SEND => _socket_req_resume_send,
+                        _ => {
+                            panic!("Unknown operation type : {:?}", req.opcode());
+                        }
+                    },
+                )
             } else if is_poll_op && op_poll_events != 0 {
                 if (interests & Interest::ONESHOT.bits() as i32) != 0 {
                     // Success one-shot, set the status and returns to user

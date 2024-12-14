@@ -8,7 +8,7 @@ pub(super) const UNKNOWN: i32 = i32::MIN + 1;
 #[repr(u8)]
 #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
 #[derive(Clone, Copy, Debug)]
-enum OpCode {
+pub enum OpCode {
     /// No operation
     NOOP, // **MUST** be first and `0`
     /// Socket poll
@@ -38,9 +38,11 @@ impl From<OpCode> for u8 {
 }
 
 pub(crate) const OP_NOOP: u8 = OpCode::NOOP as _;
+const _OP_SOCKET_START: u8 = OpCode::SOCKET_POLL as _;
 pub(crate) const OP_SOCKET_POLL: u8 = OpCode::SOCKET_POLL as _;
 pub(crate) const OP_SOCKET_RECV: u8 = OpCode::SOCKET_RECV as _;
 pub(crate) const OP_SOCKET_SEND: u8 = OpCode::SOCKET_SEND as _;
+const _OP_SOCKET_END: u8 = OpCode::SOCKET_SEND as _;
 
 #[repr(C)]
 // #[derive(Clone)]
@@ -122,6 +124,11 @@ impl Request {
     }
 
     #[inline(always)]
+    pub fn opcode(&self) -> OpCode {
+        OpCode::from(self.opcode_raw())
+    }
+
+    #[inline(always)]
     pub fn opcode_raw(&self) -> u8 {
         (self.flags_and_op_code & 0xFFu32) as u8
     }
@@ -129,8 +136,25 @@ impl Request {
     #[inline(always)]
     pub fn is_a_socket_op(&self) -> bool {
         let opcode: u8 = self.opcode_raw();
-        OP_SOCKET_POLL <= opcode && opcode <= OP_SOCKET_RECV
+        _OP_SOCKET_START <= opcode && opcode <= _OP_SOCKET_END
     }
+
+    #[cfg(target_family = "unix")]
+    pub(crate) fn get_socket(&self) -> std::mem::ManuallyDrop<socket2::Socket> {
+        use std::os::fd::FromRawFd;
+        std::mem::ManuallyDrop::new(unsafe {
+            socket2::Socket::from_raw_fd(self.op.socket.socket.inner as _)
+        })
+    }
+    #[cfg(target_family = "windows")]
+    pub(crate) fn get_socket(&self) -> std::mem::ManuallyDrop<socket2::Socket> {
+        use std::os::windows::io::FromRawSocket;
+        std::mem::ManuallyDrop::new(unsafe {
+            socket2::Socket::from_raw_fd(self.op.socket.socket.inner as _)
+        })
+    }
+
+    // }
     /*
     pub fn set_status(self, status: i32) -> bool {
         if status == PENDING {
