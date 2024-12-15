@@ -1,5 +1,5 @@
 struct Buffer {
-    group_id: u32,
+    group_id: u16,
     buffer_id: u16,
     len: u32,
     base: *mut u8,
