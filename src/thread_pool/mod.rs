@@ -6,8 +6,8 @@ use std::sync::LazyLock;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 
+use crate::file;
 use crate::request;
-use crate::{catch_enomem, file};
 use crate::{ready_fifo::ReadyFifo, Request};
 
 static IO_POOL: LazyLock<Pool> = LazyLock::new(Pool::default);

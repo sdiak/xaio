@@ -170,7 +170,6 @@ impl TimerHeap {
 #[cfg(test)]
 mod test {
     use rand::seq::SliceRandom;
-    use rand::Rng;
 
     use super::*;
 

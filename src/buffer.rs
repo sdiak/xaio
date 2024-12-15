@@ -1,6 +1,8 @@
 struct Buffer {
     group_id: u32,
-    buffer_id: u32,
+    buffer_id: u16,
+    len: u32,
+    base: *mut u8,
 }
 
 struct FreeBuffer {
