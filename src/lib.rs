@@ -110,11 +110,6 @@ where
 mod status;
 pub use status::*;
 
-mod task;
-
-mod scheduler;
-pub use scheduler::*;
-
 pub type CTaskPoll = extern "C" fn(thiz: &mut CTask) -> status::Status;
 #[repr(C)]
 #[derive(Debug)]
