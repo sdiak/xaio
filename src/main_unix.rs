@@ -57,6 +57,18 @@ pub fn main() {
 
     println!("\nSizeof Request: {}", std::mem::size_of::<Request>());
     println!(
+        "\nSizeof io::Error: {}",
+        std::mem::size_of::<std::io::Error>()
+    );
+    println!(
+        "\nSizeof Rstd::io::esult<i32>: {}",
+        std::mem::size_of::<std::io::Result<i32>>()
+    );
+    println!(
+        "\nSizeof Rstd::io::esult<()>: {}",
+        std::mem::size_of::<std::io::Result<()>>()
+    );
+    println!(
         "sys::current_thread(): {:?}",
         xaio::sys::get_current_thread_id()
     );

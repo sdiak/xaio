@@ -1,10 +1,9 @@
-use crate::{request, ReadyList, Request};
+use crate::Request;
 use std::fs::File;
-use std::io::{ErrorKind, Result};
+use std::io::Result;
 use std::mem::ManuallyDrop;
 #[cfg(target_family = "unix")]
 use std::os::unix::fs::FileExt;
-use std::sync::atomic::Ordering;
 
 fn _file_io_sync<F>(req: &mut Request, f: F) -> i32
 where

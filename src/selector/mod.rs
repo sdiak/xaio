@@ -1,7 +1,5 @@
-use std::time::Duration;
-
 mod poll;
-pub use poll::*;
+pub(crate) use poll::*;
 mod event;
 pub use event::*;
 mod interest;

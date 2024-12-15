@@ -1,14 +1,8 @@
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-
 use super::Interest;
-use crate::{PhantomUnsend, RawSocketFd};
 
 #[cfg_attr(not(target_os = "windows"), path = "rawpoll_unix.rs")]
 #[cfg_attr(target_os = "windows", path = "rawpoll_windows.rs")]
 pub(crate) mod rawpoll;
-
-pub use rawpoll::{POLLERR, POLLHUP, POLLIN, POLLOUT, POLLPRI};
 
 fn interests_to_events(interests: Interest) -> libc::c_short {
     let mut events = 0 as libc::c_short;

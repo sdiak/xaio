@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 #[cfg(target_family = "unix")]
 mod main_unix;
 #[cfg(target_family = "unix")]

@@ -1,7 +1,4 @@
-use crate::{
-    libc_close_log_on_error, libc_read_all, libc_write_all, selector::rawpoll, sys::EventCallBack,
-    RawSocketFd,
-};
+use crate::{libc_read_all, libc_write_all, selector::rawpoll, RawSocketFd};
 use std::{
     fmt::Debug,
     io::{Error, ErrorKind, Result},

@@ -1,7 +1,3 @@
-use crate::DriverIFace;
-use crate::Request;
-use std::io::{Error, ErrorKind, Result};
-
 #[derive(Debug)]
 pub struct DriverURing {
     ringfd: libc::c_int,

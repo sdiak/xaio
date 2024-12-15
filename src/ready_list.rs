@@ -1,7 +1,4 @@
-use std::{
-    io::{Error, ErrorKind, Result},
-    sync::atomic::Ordering,
-};
+use std::sync::atomic::Ordering;
 
 use crate::{request, Request};
 
@@ -26,7 +23,7 @@ impl ReadyList {
     /// # Returns
     ///   `false` when the system is out of memory
     #[must_use]
-    pub(crate) fn alloc_and_pushback(&self, model: &Request, status: i32) -> bool {
+    pub(crate) fn alloc_and_pushback(&self, _model: &Request, status: i32) -> bool {
         // TODO:
         let mut new_tail = Request::default();
         new_tail.set_status_local(status);

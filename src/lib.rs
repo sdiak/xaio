@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 mod buffer;
 mod capi;
 mod details;
@@ -14,6 +16,7 @@ mod request_queue;
 mod ring;
 mod selector;
 mod socket;
+mod stat;
 mod thread_pool;
 pub use driver::*;
 pub use driver_none::*;
@@ -104,4 +107,5 @@ where
         .map_err(|_| std::io::Error::from(std::io::ErrorKind::OutOfMemory))
 }
 
-// pub struct Status {}
+mod status;
+pub use status::*;

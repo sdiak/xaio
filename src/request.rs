@@ -1,13 +1,12 @@
-use std::{os::fd::RawFd, ptr::NonNull, sync::atomic::Ordering};
+use std::{mem::ManuallyDrop, os::fd::RawFd, ptr::NonNull, sync::atomic::Ordering};
 
-use libc::stat;
-
-use crate::{selector::Interest, RawSocketFd};
+use crate::RawSocketFd;
 
 pub(super) const PENDING: i32 = i32::MIN;
 pub(super) const UNKNOWN: i32 = i32::MIN + 1;
 
 pub(super) const FLAG_CONCURRENT: u32 = 1u32 << 8;
+pub(super) const FLAG_RING_OWNED: u32 = 1u32 << 9;
 
 #[repr(u8)]
 #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
@@ -15,6 +14,10 @@ pub(super) const FLAG_CONCURRENT: u32 = 1u32 << 8;
 pub enum OpCode {
     /// No operation
     NOOP, // **MUST** be first and `0`
+    /// Io work
+    IO_WORK,
+    // Io work (extern "C")
+    // IO_WORK_C,
     /// Socket poll
     SOCKET_POLL,
     /// Socket recv
@@ -45,6 +48,8 @@ impl From<OpCode> for u8 {
 }
 
 pub(crate) const OP_NOOP: u8 = OpCode::NOOP as _;
+pub(crate) const OP_IO_WORK: u8 = OpCode::IO_WORK as _;
+
 const _OP_SOCKET_START: u8 = OpCode::SOCKET_POLL as _;
 pub(crate) const OP_SOCKET_POLL: u8 = OpCode::SOCKET_POLL as _;
 pub(crate) const OP_SOCKET_RECV: u8 = OpCode::SOCKET_RECV as _;
@@ -74,8 +79,14 @@ impl Default for Request {
     }
 }
 
+pub fn drop_request(req: NonNull<Request>) {
+    if (unsafe { req.as_ref().flags_and_op_code } & FLAG_RING_OWNED) != 0 {
+        log::warn!("TODO:");
+    }
+}
+
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct SocketRequest {
     /// The socket
     pub(crate) socket: RawSocketFd,
@@ -91,7 +102,7 @@ pub struct SocketRequest {
     pub(crate) buffer: *mut u8,
 }
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct FileIORequest {
     /// The fd
     pub(crate) fd: RawFd,
@@ -103,11 +114,15 @@ pub struct FileIORequest {
     pub(crate) buffer: *mut u8,
 }
 
+pub struct RustWork {
+    pub(crate) work: Option<Box<dyn FnOnce() + Send>>,
+}
+
 #[repr(C)]
-#[derive(Clone, Copy)]
 pub union RequestData {
     pub(crate) socket: SocketRequest,
     pub(crate) file_io: FileIORequest,
+    pub(crate) rust_work: ManuallyDrop<RustWork>,
 }
 
 #[repr(C)]
@@ -184,6 +199,20 @@ impl Request {
     #[cfg(not(target_os = "windows"))]
     fn completion_queue_when_concurrent_ptr(&self) -> *const crate::request_queue::RequestQueue {
         self._unix_header
+    }
+
+    #[cfg(target_os = "windows")]
+    pub(crate) fn set_concurrent(&mut self, completion_queue: &crate::request_queue::RequestQueue) {
+        assert!(!self.is_concurrent());
+        self.flags_and_op_code |= FLAG_CONCURRENT;
+        self._win_header.hEvent =
+            completion_queue as *mut crate::request_queue::RequestQueue as *mut libc::c_void;
+    }
+    #[cfg(not(target_os = "windows"))]
+    pub(crate) fn set_concurrent(&mut self, completion_queue: &crate::request_queue::RequestQueue) {
+        assert!(!self.is_concurrent());
+        self.flags_and_op_code |= FLAG_CONCURRENT;
+        self._unix_header = completion_queue as *const crate::request_queue::RequestQueue;
     }
 
     unsafe fn completion_queue_when_concurrent(&mut self) -> &crate::request_queue::RequestQueue {

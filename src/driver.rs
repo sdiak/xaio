@@ -3,14 +3,13 @@ use super::driver_epoll::DriverEPoll;
 #[cfg(target_os = "windows")]
 use super::driver_iocp_windows::DriverIOCP;
 use super::driver_none::DriverNone;
-#[cfg(target_os = "linux")]
-use super::driver_uring::DriverURing;
+// #[cfg(target_os = "linux")]
+// use super::driver_uring::DriverURing;
 
-use super::{Request, RequestHandle, RequestList};
+use super::{Request, RequestList};
 use bitflags::bitflags;
 use enum_dispatch::enum_dispatch;
 use std::ptr::NonNull;
-use std::{pin::Pin, time::Duration};
 
 use std::io::Result;
 

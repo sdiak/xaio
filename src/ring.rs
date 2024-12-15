@@ -1,5 +1,4 @@
 use crate::sys;
-use num::ToPrimitive;
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::io::Error;
 use std::sync::LazyLock;

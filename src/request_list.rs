@@ -78,7 +78,7 @@ impl RequestList {
             return false;
         }
         if node == self.head {
-            unsafe { self.pop_front() };
+            self.pop_front();
             return true;
         }
         let mut prev: *mut Request = self.head;
@@ -172,7 +172,7 @@ impl RequestList {
         // }
         unsafe {
             while !self.head.is_null() && !f(&mut *self.head) {
-                let mut node = self.head;
+                let node = self.head;
                 self.head = (*node).list_pop_next(Ordering::Relaxed);
                 removed.push_back(node);
             }

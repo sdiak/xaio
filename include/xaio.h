@@ -208,6 +208,8 @@ int32_t xdriver_new(struct xdriver_s **pdriver,
                     const struct xdriver_class_s *opt_clazz,
                     const struct xdriver_params_s *opt_params);
 
+extern int *errno_location(void);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

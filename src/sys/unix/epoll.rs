@@ -1,7 +1,7 @@
 use crate::selector::{Interest, RawSelectorHandle};
 use crate::RawSocketFd;
 use std::{
-    io::{Error, ErrorKind, Result},
+    io::{Error, Result},
     os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd},
 };
 

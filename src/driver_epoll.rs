@@ -57,8 +57,8 @@ impl DriverEPoll {
     }
     fn process_events(&mut self, nevents: usize) -> i32 {
         let mut nuser_events = 0i32;
-        for i in 0usize..nevents {
-            nuser_events += i as i32; // FIXME:
+        for _ in 0usize..nevents {
+            nuser_events += 1 as i32; // FIXME:
             todo!();
         }
         nuser_events
@@ -80,7 +80,7 @@ impl DriverIFace for DriverEPoll {
             _ => Err(Error::from(ErrorKind::Unsupported)),
         }
     }
-    unsafe fn cancel(&mut self, req: NonNull<Request>) -> std::io::Result<()> {
+    unsafe fn cancel(&mut self, _req: NonNull<Request>) -> std::io::Result<()> {
         Err(Error::from(ErrorKind::NotFound))
     }
     fn wait(

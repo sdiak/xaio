@@ -35,7 +35,7 @@ pub mod poll;
 #[inline(always)]
 pub fn get_current_thread_id() -> usize {
     use std::arch::asm;
-    let mut id = 0usize;
+    let mut id: usize;
     unsafe {
         asm!(
             "mov {id}, fs:0",

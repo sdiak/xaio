@@ -1,10 +1,6 @@
-use std::{
-    io::{Error, ErrorKind, Result},
-    ptr::NonNull,
-    sync::atomic::Ordering,
-};
+use std::{ptr::NonNull, sync::atomic::Ordering};
 
-use crate::{request, Request};
+use crate::Request;
 
 #[derive(Debug)]
 pub struct ReadyFifo {

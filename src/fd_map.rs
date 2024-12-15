@@ -87,7 +87,7 @@ where
     };
 
     let status = f(ManuallyDrop::deref(&socket), buffer, events);
-    if (status >= 0) {
+    if status >= 0 {
         unsafe { req.op.socket.done += status as u32 };
         if unsafe { req.op.socket.done >= req.op.socket.todo } {
             // DONE: return the request to user

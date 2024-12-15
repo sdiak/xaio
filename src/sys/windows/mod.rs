@@ -132,3 +132,7 @@ impl Library {
         }
     }
 }
+
+pub fn last_os_error() -> i32 {
+    windows_sys::Win32::Foundation::GetLastError() as i32
+}

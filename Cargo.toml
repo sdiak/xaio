@@ -17,6 +17,9 @@ log = "0.4.22"
 num = "0.4.3"
 rustc-hash = "2.1.0"
 socket2 = { version = "0.5.8", features = ["all"]}
+cfg-if = "1.0.0"
+num_cpus = "1.0"
+
 
 [dev-dependencies]
 rand = "0.8.5"
