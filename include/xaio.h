@@ -16,6 +16,13 @@
 #if !defined(__GNUC__) && !defined(__clang__)
 #   define __attribute__()
 #endif
+#if defined(_WIN32) || defined(_WIN64)
+    typedef uintptr_t xsocket_t;
+    typedef void *xfile_t;
+#else
+    typedef int xsocket_t;
+    typedef int xfile_t;
+#endif
     
 
 /**
@@ -24,6 +31,8 @@
 #define XDRIVER_FLAG_ATTACH_HANDLE 1u
 
 #define XDRIVER_FLAG_CLOSE_ON_EXEC 2u
+
+struct xring_s;
 
 /**
  * A thread-local completion port
@@ -34,6 +43,8 @@ struct xcp_s {
   uint32_t prv__refcount;
   int64_t prv__now;
 };
+
+typedef bool (*xdriver_is_supported_m)(void);
 
 /**
  * IO Driver parameters
@@ -65,8 +76,6 @@ struct xdriver_params_s {
   int32_t max_number_of_fd_hint;
   int32_t reserved_;
 };
-
-typedef bool (*xdriver_is_supported_m)(void);
 
 typedef struct xdriver_params_s *_Nonnull (*xdriver_default_params_m)(struct xdriver_params_s *_Nonnull params);
 
@@ -168,6 +177,24 @@ struct xdriver_s {
   struct xdriver_params_s params;
 };
 
+struct xevent_s {
+  int32_t status;
+  uint32_t flags;
+  uint64_t token;
+};
+
+/**
+ * Work callback.
+ *
+ * # Arguments
+ *   - `work_arg` argument passed to `xring_submit_work`
+ *
+ * # Returns
+ *   -  `>=0` on success
+ *   -  `<0` on error
+ */
+typedef int32_t (*xwork_cb)(void *work_arg);
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -186,7 +213,83 @@ extern "C" {
  */
 extern int32_t xcp_new(struct xcp_s **pport);
 
-struct xdriver_params_s *xdriver_params_default(struct xdriver_params_s *params);
+/**
+ * Creates a new ring.
+ *
+ * # Arguments
+ *   - `pring` `*pring` receives the new ring address or `NULL` on error.
+ *   - `opt_driver` driver to **move** to the ring or `NULL` to use the default driver.
+ *
+ * # Returns
+ *   -  `0` on success
+ *   -  `-EINVAL` when `pring == NULL`
+ *   -  `-ENOMEM` when the system is out of memory
+ */
+int32_t xnew(struct xring_s **pring, struct xdriver_s *opt_driver);
+
+/**
+ * Wait for up to `timeout_ms` for events, the wait will stop as soon as a completion event is present.
+ *
+ * # Arguments
+ *   - `ring` the completion ring,
+ *   - `events` an array to receive the completion events,
+ *   - `capacity` the capacity of `events`,
+ *   - `timeout_ms` the maximum amount of time to wait for events or `<0` for infinity,
+ *
+ * # Returns
+ *   -  `>0` the number of completion events stored in `events`
+ *   -  `0` on timeout
+ *   -  `-EINVAL` when `ring == NULL`
+ *   -  `-EINVAL` when `events == NULL`
+ *   -  `-EINVAL` when `capacity <= 0`
+ *   -  `<0` the error code returned by the underlying subsystem
+ */
+int32_t xwait(struct xring_s *ring,
+              struct xevent_s *events,
+              int32_t capacity,
+              int32_t timeout_ms);
+
+/**
+ * Tries to cancel the submission associated to the given token.
+ * The submission associated to the token will still be retreived by `xring_wait` even
+ * when this function returns `0`.
+ *
+ * # Arguments
+ *   - `ring` the completion ring,
+ *   - `token` a token associated to a submissions,
+ *
+ * # Returns
+ *   -  `0` on success
+ *   -  `-EINVAL` when `ring == NULL`
+ *   -  `-ENOENT` when the submission associated to the token were not found
+ *   -  `-EALREADY` when the associated submission has progressed far enough that cancelation is no longer possible
+ */
+int32_t xcancel(struct xring_s *ring,
+                uint64_t token,
+                bool all);
+
+/**
+ * Submit some work to the IO thread pool
+ *
+ * # Arguments
+ *   - `ring` the completion ring,
+ *   - `token` a token associated to the submission,
+ *   - `work_cb` the work function pointer,
+ *   - `work_arg` the argument to pass to `work_cb`,
+ *
+ * # Returns
+ *   -  `0` on success
+ *   -  `-EINVAL` when `ring == NULL`
+ *   -  `-EEXIST` when `token` is already associated to a submission
+ *   -  `-EINVAL` when `work_cb == (xwork_cb)0`
+ *   -  `-ENOMEM` when the system is out of memory
+ *   -  `<0` the error code returned by the underlying subsystem
+ */
+int32_t xio_work(struct xring_s *ring, uint64_t token, xwork_cb work_cb, void *work_arg);
+
+int32_t xsend(struct xring_s *ring, uint64_t token, xsocket_t socket);
+
+void xdriver_params_default(struct xdriver_params_s *_Nonnull params);
 
 const struct xdriver_class_s *_Nonnull xdriver_class_default(void);
 

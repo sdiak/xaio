@@ -2,7 +2,7 @@
 pub const XDRIVER_FLAG_ATTACH_HANDLE: u32 = 0x00000001u32;
 pub const XDRIVER_FLAG_CLOSE_ON_EXEC: u32 = 0x00000002u32;
 
-use std::{alloc::Layout, default, ffi::c_void, pin::Pin};
+use std::{alloc::Layout, default, ffi::c_void, pin::Pin, ptr::NonNull};
 
 use crate::capi::{xaio_s, xcp_s};
 
@@ -25,13 +25,8 @@ pub struct xdriver_params_s {
     pub reserved_: i32,
 }
 #[no_mangle]
-pub unsafe extern "C" fn xdriver_params_default(
-    params: *mut xdriver_params_s,
-) -> *mut xdriver_params_s {
-    if !params.is_null() {
-        *params = xdriver_params_s::default();
-    }
-    params
+pub unsafe extern "C" fn xdriver_params_default(params: NonNull<xdriver_params_s>) {
+    params.write(xdriver_params_s::default());
 }
 
 impl Default for xdriver_params_s {

@@ -29,6 +29,13 @@ fn main() {
 #if !defined(__GNUC__) && !defined(__clang__)
 #   define __attribute__()
 #endif
+#if defined(_WIN32) || defined(_WIN64)
+    typedef uintptr_t xsocket_t;
+    typedef void *xfile_t;
+#else
+    typedef int xsocket_t;
+    typedef int xfile_t;
+#endif
     "
         .into(),
     );
@@ -42,6 +49,8 @@ fn main() {
     cbindgen::Builder::new()
         .with_crate(crate_dir)
         .with_config(config)
+        .with_define("unix", "UNIX", "UNIX")
+        .with_define("windows", "WINDOWS", "WINDOWS")
         .generate()
         .expect("Unable to generate bindings")
         .write_to_file("include/xaio.h");

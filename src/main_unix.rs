@@ -125,4 +125,9 @@ pub fn main() {
     }
     std::thread::sleep(std::time::Duration::from_millis(1000));
     ring.wait_ms(1);
+
+    println!(
+        "\nSizeof Box<dyn>: {}",
+        std::mem::size_of::<std::pin::Pin<Box<dyn std::future::Future<Output = i64>>>>()
+    );
 }

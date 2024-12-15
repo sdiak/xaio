@@ -109,3 +109,39 @@ where
 
 mod status;
 pub use status::*;
+
+mod task;
+
+mod scheduler;
+pub use scheduler::*;
+
+pub type CTaskPoll = extern "C" fn(thiz: &mut CTask) -> status::Status;
+#[repr(C)]
+#[derive(Debug)]
+pub struct CTask {
+    poll: CTaskPoll,
+    status: std::sync::atomic::AtomicIsize,
+}
+
+struct RustTask<T> {
+    result: std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'static>>,
+}
+
+union TaskFlavor<T> {
+    as_rust: std::mem::ManuallyDrop<RustTask<T>>,
+    as_c: std::mem::ManuallyDrop<CTask>,
+}
+struct TaskInner<T> {
+    /// The poll callback
+    flavor: TaskFlavor<T>,
+    /// The worker address and 1usize when this is a c task flavor
+    owner: usize,
+}
+struct Task {
+    // TODO:
+}
+impl Task {
+    fn poll(&mut self) -> bool {
+        false
+    }
+}
