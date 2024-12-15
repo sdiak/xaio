@@ -1,12 +1,20 @@
-use crate::sys;
+use crate::{
+    request, sys, thread_pool, OpCode, Status, FLAG_INITIALIZED, FLAG_RING_OWNED, PENDING,
+};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::io::Error;
+use std::mem::{zeroed, ManuallyDrop, MaybeUninit};
+use std::ops::{Deref, DerefMut};
+use std::panic::UnwindSafe;
+use std::ptr::NonNull;
+use std::rc::Rc;
+use std::sync::atomic::Ordering;
 use std::sync::LazyLock;
 use std::{cell::RefCell, sync::atomic::AtomicU32, time::Instant};
 
 use crate::{
     request_queue::RequestQueue, Driver, DriverIFace, PhantomUnsend, PhantomUnsync, ReadyList,
-    Request,
+    Request, RequestCallback,
 };
 use std::io::{ErrorKind, Result};
 
@@ -28,8 +36,9 @@ pub(crate) struct RingInner {
     _unsend: PhantomUnsend,
 }
 
+#[derive(Clone)]
 pub struct Ring {
-    inner: Box<RefCell<RingInner>>,
+    inner: Rc<RefCell<RingInner>>,
 }
 impl Drop for Ring {
     fn drop(&mut self) {
@@ -39,10 +48,134 @@ impl Drop for Ring {
         }
     }
 }
+
+struct DropReqOnPanic<'a> {
+    ring: &'a Ring,
+    req: NonNull<Request>,
+}
+impl<'a> Drop for DropReqOnPanic<'a> {
+    fn drop(&mut self) {
+        self.ring.__drop_request(self.req);
+    }
+}
+impl<'a> DropReqOnPanic<'a> {
+    fn as_mut(&mut self) -> &mut Request {
+        unsafe { self.req.as_mut() }
+    }
+}
+
 impl Ring {
     pub fn new(driver: Box<Driver>) -> Result<Self> {
         Ok(Self {
-            inner: Box::new(RefCell::new(RingInner::new(driver)?)),
+            inner: Rc::new(RefCell::new(RingInner::new(driver)?)),
+        })
+    }
+
+    pub fn wait_ms(&self, timeout_ms: i32) -> Status {
+        let mut ready: ReadyList = ReadyList::new();
+        let mut thiz = self.inner.borrow_mut();
+        let timeout_ms = unsafe { thiz.concurrent.park_begin(timeout_ms) };
+        match thiz.driver.wait(&mut ready, timeout_ms) {
+            Ok(_) => {}
+            Err(err) => return Status::from(err),
+        };
+        unsafe { thiz.concurrent.park_end(&mut ready) };
+        let mut it = ready.head;
+        let mut n_events = ready.len() as i32;
+        while !it.is_null() {
+            let req = it;
+            it = unsafe { (*it).list_get_next(Ordering::Relaxed) };
+            match unsafe { (*req).callback } {
+                Some(cb) => {
+                    cb(unsafe { &mut *req });
+                }
+                None => {}
+            }
+        }
+        // All the events are handled
+        std::mem::forget(ready);
+        Status::new(n_events)
+    }
+    pub fn submit_io_work<W>(
+        &self,
+        work: W,
+        callback: Option<RequestCallback>,
+        memory: Option<NonNull<Request>>,
+    ) -> Result<()>
+    where
+        W: FnOnce() -> i32 + Send + UnwindSafe + 'static,
+    {
+        let mut memory = self.__get_or_allocate_req(memory, OpCode::IO_WORK, callback)?;
+        unsafe {
+            std::ptr::write(
+                &mut *memory.as_mut().op.rust_work as *mut request::RustWork,
+                request::RustWork {
+                    work: Some(Box::new(work)),
+                    panic_cause: None,
+                },
+            );
+            memory.as_mut().flags_and_op_code |= request::FLAG_NEED_DROP;
+        }
+        self.__submit(memory);
+        Ok(())
+    }
+
+    fn __submit(&self, mut prepared: DropReqOnPanic) {
+        println!("SUBMIT");
+        let ring = self.inner.borrow_mut();
+        match prepared.as_mut().opcode_raw() {
+            _ => thread_pool::submit_io_work(&ring.concurrent, prepared.req),
+        };
+        // drop on panic no longer needed
+        std::mem::forget(prepared);
+    }
+    fn __allocate_request(&self) -> Result<NonNull<Request>> {
+        crate::catch_enomem(|| unsafe {
+            NonNull::new_unchecked(
+                Box::<Request>::leak(Box::<Request>::new(Request::default())) as *mut Request,
+            )
+        })
+    }
+    fn __drop_request(&self, mut req: NonNull<Request>) {
+        let req = unsafe { req.as_mut() };
+        if (req.flags_and_op_code & request::FLAG_NEED_DROP) != 0 {
+            match req.opcode_raw() {
+                // TODO: operation destructors
+                _ => {}
+            }
+        }
+        if (req.flags_and_op_code & request::FLAG_RING_OWNED) != 0 {
+            let _ = unsafe { Box::<request::Request>::from_raw(req as *mut Request) };
+        }
+    }
+    fn __get_or_allocate_req(
+        &self,
+        memory: Option<NonNull<Request>>,
+        opcode: request::OpCode,
+        callback: Option<RequestCallback>,
+    ) -> Result<DropReqOnPanic> {
+        let mut flags = FLAG_INITIALIZED | opcode as u32;
+        let mut memory = match memory {
+            Some(mut memory) => {
+                if !unsafe { memory.as_ref().is_new() } {
+                    return Err(Error::from(ErrorKind::InvalidInput));
+                }
+                memory
+            }
+            None => {
+                flags |= FLAG_RING_OWNED;
+                self.__allocate_request()?
+            }
+        };
+        {
+            let req = unsafe { memory.as_mut() };
+            req.flags_and_op_code = flags;
+            req.status.store(PENDING, Ordering::Relaxed);
+            req.callback = callback;
+        }
+        Ok(DropReqOnPanic {
+            ring: self,
+            req: memory,
         })
     }
 

@@ -83,19 +83,15 @@ impl DriverIFace for DriverEPoll {
     unsafe fn cancel(&mut self, _req: NonNull<Request>) -> std::io::Result<()> {
         Err(Error::from(ErrorKind::NotFound))
     }
-    fn wait(
-        &mut self,
-        _ready_list: &mut crate::RequestList,
-        timeout_ms: i32,
-    ) -> std::io::Result<i32> {
+    fn wait(&mut self, _ready_list: &mut crate::ReadyList, timeout_ms: i32) -> std::io::Result<()> {
         let mut n_user_events = 0i32;
         self.epoll.select(&mut self.buffer, timeout_ms)?;
-        for ev in self.buffer.iter() {
-            if ev.token as usize != WAKE_TOKEN {
-                n_user_events += 1;
-            }
-        }
-        Ok(n_user_events)
+        // for ev in self.buffer.iter() {
+        //     if ev.token as usize != WAKE_TOKEN {
+        //         n_user_events += 1;
+        //     }
+        // }
+        Ok(())
     }
     #[inline]
     fn wake(&self) -> std::io::Result<()> {

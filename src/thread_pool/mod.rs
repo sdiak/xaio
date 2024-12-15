@@ -58,7 +58,7 @@ impl Pool {
     }
 
     fn submit(&self, req: NonNull<Request>) {
-        assert!(unsafe { req.as_ref() }.is_concurrent());
+        debug_assert!(unsafe { req.as_ref() }.is_concurrent());
         let need_notify = {
             let mut pool = self.inner.0.lock().expect("Unrecoverable error");
             unsafe { pool.queue.push_back(req) };

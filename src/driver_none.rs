@@ -50,9 +50,9 @@ impl DriverIFace for DriverNone {
     }
     fn wait(
         &mut self,
-        _ready_list: &mut crate::RequestList,
+        _ready_list: &mut crate::ReadyList,
         _timeout_ms: i32,
-    ) -> std::io::Result<i32> {
+    ) -> std::io::Result<()> {
         Err(Error::from(ErrorKind::Unsupported))
     }
     fn wake(&self) -> Result<()> {

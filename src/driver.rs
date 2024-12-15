@@ -6,7 +6,7 @@ use super::driver_none::DriverNone;
 // #[cfg(target_os = "linux")]
 // use super::driver_uring::DriverURing;
 
-use super::{Request, RequestList};
+use super::{ReadyList, Request};
 use bitflags::bitflags;
 use enum_dispatch::enum_dispatch;
 use std::ptr::NonNull;
@@ -29,7 +29,7 @@ pub trait DriverIFace {
 
     fn config(&self) -> &DriverConfig;
 
-    fn wait(&mut self, ready_list: &mut RequestList, timeout_ms: i32) -> Result<i32>;
+    fn wait(&mut self, ready_list: &mut ReadyList, timeout_ms: i32) -> Result<()>;
 
     /// # Safety
     ///   req **MUST** must points to a valid request, this address **MUST** be valid until the request is returned by `DriverIFace::wait`

@@ -7,8 +7,10 @@ use crate::RawSocketFd;
 pub(super) const PENDING: i32 = i32::MIN;
 pub(super) const UNKNOWN: i32 = i32::MIN + 1;
 
-pub(super) const FLAG_CONCURRENT: u32 = 1u32 << 8;
-pub(super) const FLAG_RING_OWNED: u32 = 1u32 << 9;
+pub(super) const FLAG_INITIALIZED: u32 = 1u32 << 8;
+pub(super) const FLAG_NEED_DROP: u32 = 1u32 << 9;
+pub(super) const FLAG_CONCURRENT: u32 = 1u32 << 10;
+pub(super) const FLAG_RING_OWNED: u32 = 1u32 << 10;
 
 #[repr(u8)]
 #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
@@ -60,6 +62,8 @@ const _OP_SOCKET_END: u8 = OpCode::SOCKET_SEND as _;
 pub(crate) const OP_FILE_READ: u8 = OpCode::FILE_READ as _;
 pub(crate) const OP_FILE_WRITE: u8 = OpCode::FILE_WRITE as _;
 
+pub type RequestCallback = extern "C" fn(req: &mut Request) -> ();
+
 #[repr(C)]
 // #[derive(Clone)]
 pub struct Request {
@@ -71,10 +75,12 @@ pub struct Request {
     // pub(crate) owner: Option<RefCell<RingInner>>,
     // request status
     pub(crate) status: std::sync::atomic::AtomicI32,
-    flags_and_op_code: u32,
+    pub(crate) flags_and_op_code: u32,
     list_next: std::sync::atomic::AtomicUsize,
+    pub(crate) callback: Option<RequestCallback>,
     pub(crate) op: RequestData,
 }
+
 impl Default for Request {
     fn default() -> Self {
         unsafe { std::mem::MaybeUninit::zeroed().assume_init() }
@@ -161,6 +167,11 @@ impl Request {
         let old_next = (self.list_next.load(order) & !Request::IN_A_LIST_BIT) as *mut Request;
         self.list_next.store(0usize, Ordering::Relaxed);
         old_next
+    }
+
+    #[inline(always)]
+    pub(crate) fn is_new(&self) -> bool {
+        self.flags_and_op_code == 0u32
     }
 
     #[inline(always)]

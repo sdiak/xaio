@@ -1,5 +1,9 @@
-use xaio::{Driver, DriverConfig, DriverIFace, DriverKind, Request, RequestList};
+use xaio::{Driver, DriverConfig, DriverIFace, DriverKind, ReadyList, Request, Ring};
 // use xaio::thread_pool::s
+
+extern "C" fn io_work_callback(req: &mut Request) {
+    println!("io_work_callback({}: {})", req.opcode_raw(), req.status());
+}
 
 pub fn main() {
     println!("Hello unix");
@@ -10,7 +14,7 @@ pub fn main() {
     let config = DriverConfig::default();
     let mut driver = Driver::new(DriverKind::EPoll, &config).unwrap();
     println!("{driver:?}");
-    let mut ready = RequestList::new();
+    let mut ready = ReadyList::new();
     driver.wake().unwrap();
     (*driver).wait(&mut ready, -1).unwrap();
 
@@ -104,4 +108,21 @@ pub fn main() {
     for h in handles {
         h.join().unwrap();
     }
+
+    let config = DriverConfig::default();
+    let driver = Driver::new(DriverKind::EPoll, &config).unwrap();
+    let ring = Ring::new(driver).unwrap();
+    for i in 0..10 {
+        ring.submit_io_work(
+            move || {
+                println!("Hello {i}");
+                33 + i
+            },
+            Some(io_work_callback),
+            None,
+        )
+        .unwrap();
+    }
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+    ring.wait_ms(1);
 }
