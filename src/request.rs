@@ -1,4 +1,6 @@
-use std::{mem::ManuallyDrop, os::fd::RawFd, ptr::NonNull, sync::atomic::Ordering};
+use std::{
+    mem::ManuallyDrop, os::fd::RawFd, panic::UnwindSafe, ptr::NonNull, sync::atomic::Ordering,
+};
 
 use crate::RawSocketFd;
 
@@ -115,7 +117,8 @@ pub struct FileIORequest {
 }
 
 pub struct RustWork {
-    pub(crate) work: Option<Box<dyn FnOnce() + Send>>,
+    pub(crate) work: Option<Box<dyn FnOnce() -> i32 + Send + UnwindSafe>>,
+    pub panic_cause: Option<Box<dyn std::any::Any + Send>>,
 }
 
 #[repr(C)]

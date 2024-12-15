@@ -1,13 +1,13 @@
-use std::mem::{ManuallyDrop, MaybeUninit};
 use std::num::NonZero;
+use std::panic::catch_unwind;
 use std::ptr::NonNull;
 use std::sync::atomic::Ordering;
 use std::sync::LazyLock;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 
-use crate::file;
 use crate::request;
+use crate::{catch_enomem, file};
 use crate::{ready_fifo::ReadyFifo, Request};
 
 static IO_POOL: LazyLock<Pool> = LazyLock::new(Pool::default);
@@ -77,12 +77,15 @@ impl Pool {
         }
     }
 
-    fn run_rust_work(work: &mut crate::request::RustWork) -> i32 {
-        match work.work.take() {
-            Some(work) => {
-                work();
-                0 // TODO:
-            }
+    fn run_rust_work(job: &mut crate::request::RustWork) -> i32 {
+        match job.work.take() {
+            Some(work) => match catch_unwind(work) {
+                Ok(status) => status,
+                Err(cause) => {
+                    job.panic_cause = Some(cause);
+                    libc::EIO
+                }
+            },
             None => 0,
         }
     }
