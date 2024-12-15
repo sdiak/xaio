@@ -19,6 +19,10 @@ impl RequestQueue {
         })
     }
 
+    pub fn waker(&self) -> &Event {
+        &self.waker
+    }
+
     /// Adds a new completed request to the given concurrent queue.
     ///
     /// # Arguments

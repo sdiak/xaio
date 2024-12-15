@@ -169,6 +169,11 @@ impl Request {
     }
 
     #[inline(always)]
+    pub fn status(&self) -> i32 {
+        self.status.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
     pub fn opcode_raw(&self) -> u8 {
         (self.flags_and_op_code & 0xFFu32) as u8
     }
@@ -218,13 +223,30 @@ impl Request {
         self._unix_header = completion_queue as *const crate::request_queue::RequestQueue;
     }
 
+    pub fn tmp_prep_io_work<W>(&mut self, work: W)
+    where
+        W: FnOnce() -> i32 + Send + UnwindSafe + 'static,
+    {
+        self.status.store(PENDING, Ordering::Relaxed);
+        self.flags_and_op_code = OP_IO_WORK as _;
+        unsafe {
+            std::ptr::write(
+                &mut *self.op.rust_work as *mut RustWork,
+                RustWork {
+                    work: Some(Box::new(work)),
+                    panic_cause: None,
+                },
+            );
+        }
+    }
+
     unsafe fn completion_queue_when_concurrent(&mut self) -> &crate::request_queue::RequestQueue {
         unsafe { &*self.completion_queue_when_concurrent_ptr() }
     }
 
     #[inline]
     pub(crate) fn is_concurrent(&self) -> bool {
-        (self.flags_and_op_code & FLAG_CONCURRENT) == 0
+        (self.flags_and_op_code & FLAG_CONCURRENT) != 0
             && !self.completion_queue_when_concurrent_ptr().is_null()
     }
     #[inline]
@@ -250,7 +272,7 @@ impl Request {
     }
     pub(crate) fn cancel(&mut self, status: i32) -> bool {
         assert!(status < 0);
-        if (self.flags_and_op_code & FLAG_CONCURRENT) == 0 {
+        if (self.flags_and_op_code & FLAG_CONCURRENT) != 0 {
             self.status
                 .compare_exchange(PENDING, status, Ordering::Relaxed, Ordering::Relaxed)
                 .is_ok()

@@ -28,12 +28,14 @@ struct Pool {
 }
 struct Locked {
     queue: ReadyFifo,
+    n_idle_workers: usize,
     workers: Vec<JoinHandle<()>>,
 }
 impl Locked {
     fn new(capacity: usize) -> Self {
         Self {
             queue: ReadyFifo::default(),
+            n_idle_workers: 0,
             workers: Vec::with_capacity(capacity),
         }
     }
@@ -46,9 +48,10 @@ impl Pool {
         };
         {
             let mut pool = thiz.inner.0.lock().expect("Unrecoverable error");
-            let min_threads = pool.workers.len();
+            let min_threads = pool.workers.capacity();
             for id in 0..min_threads {
-                pool.workers[id] = Pool::worker(thiz.clone(), id).expect("TODO: error forwarding");
+                pool.workers
+                    .push(Pool::worker(thiz.clone(), id).expect("TODO: error forwarding"));
             }
         }
         thiz
@@ -56,10 +59,12 @@ impl Pool {
 
     fn submit(&self, req: NonNull<Request>) {
         assert!(unsafe { req.as_ref() }.is_concurrent());
-        let mut pool = self.inner.0.lock().expect("Unrecoverable error");
-        let was_empty = pool.queue.is_empty();
-        unsafe { pool.queue.push_back(req) };
-        if was_empty {
+        let need_notify = {
+            let mut pool = self.inner.0.lock().expect("Unrecoverable error");
+            unsafe { pool.queue.push_back(req) };
+            pool.n_idle_workers > 0
+        };
+        if need_notify {
             self.inner.1.notify_one();
         }
     }
@@ -71,7 +76,9 @@ impl Pool {
                     return Some(job);
                 }
                 None => {
+                    pool.n_idle_workers += 1;
                     pool = self.inner.1.wait(pool).expect("Unrecoverable error");
+                    pool.n_idle_workers -= 1;
                 }
             }
         }
@@ -107,9 +114,11 @@ impl Pool {
             .stack_size(WORKER_STACK_SIZE)
             .spawn(move || loop {
                 log::trace!("Worker {id}: starting");
+                // println!("Worker {id}: starting");
                 match pool.next_job() {
                     None => return,
                     Some(mut job) => {
+                        // println!("\n *Job opcode {:?}", unsafe { job.as_ref() }.opcode());
                         let status = Pool::worker_run_job(unsafe { job.as_mut() });
                         unsafe { Request::set_status_concurrent(job, status) };
                     }
@@ -142,7 +151,18 @@ mod test {
 
     #[test]
     fn test_simple() {
+        let mut rl = crate::ready_list::ReadyList::new();
         let cq = crate::request_queue::RequestQueue::new().expect("Unrecoverable");
-        submit_io_work(&cq, work);
+        let mut work = Request::default();
+        work.tmp_prep_io_work(|| 42);
+        let wptr = unsafe { NonNull::new_unchecked(&mut work as *mut Request) };
+        submit_io_work(&cq, wptr);
+        //cq.park_begin(timeout_ms)
+        cq.waker().wait(10000).unwrap();
+        assert_eq!(unsafe { cq.park_end(&mut rl) }, 1);
+        assert!(!rl.is_empty());
+        let res = unsafe { NonNull::new_unchecked(rl.pop_front()) };
+        assert_eq!(unsafe { res.as_ref() }.status(), 42);
+        assert_eq!(wptr, res);
     }
 }
