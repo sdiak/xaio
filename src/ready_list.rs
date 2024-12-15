@@ -103,7 +103,7 @@ mod test {
         let mut a = Request::default();
         let mut b = Request::default();
         let mut c = Request::default();
-        let mut d = Request::default();
+        let _ = Request::default();
         let mut ready0 = ReadyList::new();
         assert_eq!(unsafe { ready0.pop_front() }, std::ptr::null_mut());
         assert_eq!(ready0.len(), 0);

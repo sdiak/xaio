@@ -121,7 +121,7 @@ mod test {
         let mut a = Request::default();
         let mut b = Request::default();
         let mut c = Request::default();
-        let mut rq = RequestQueue::new().expect("Test can not run if that failed");
+        let rq = RequestQueue::new().expect("Test can not run if that failed");
         let mut ready = ReadyList::new();
         unsafe {
             rq.push(&mut a as *mut Request);
@@ -150,7 +150,7 @@ mod test {
         let mut b = Request::default();
         let mut c = Request::default();
         let mut d = Request::default();
-        let mut rq = RequestQueue::new().expect("Test can not run if that failed");
+        let rq = RequestQueue::new().expect("Test can not run if that failed");
         let mut ready = ReadyList::new();
         {
             assert_eq!(unsafe { rq.park_begin(i32::MAX) }, i32::MAX);
@@ -215,7 +215,7 @@ mod test {
 
         while ready.len() < expected {
             let timeout_ms = unsafe { rq.park_begin(i32::MAX) };
-            rq.waker.wait(timeout_ms);
+            rq.waker.wait(timeout_ms).unwrap();
             unsafe { rq.park_end(&mut ready) };
         }
 

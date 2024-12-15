@@ -223,6 +223,7 @@ impl RequestList {
 }
 
 #[cfg(test)]
+#[allow(unused_unsafe)] // TODO: remove when API is stable
 mod test {
     use super::*;
 

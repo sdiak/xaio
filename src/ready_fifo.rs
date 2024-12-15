@@ -82,7 +82,7 @@ mod test {
         let pa = unsafe { NonNull::new_unchecked(&mut a as *mut Request) };
         let pb = unsafe { NonNull::new_unchecked(&mut b as *mut Request) };
         let pc = unsafe { NonNull::new_unchecked(&mut c as *mut Request) };
-        let pd = unsafe { NonNull::new_unchecked(&mut d as *mut Request) };
+        let _pd = unsafe { NonNull::new_unchecked(&mut d as *mut Request) };
 
         let mut ready0 = ReadyFifo::new();
         assert!(unsafe { ready0.pop_front() }.is_none());
