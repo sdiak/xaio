@@ -1,6 +1,6 @@
-use std::{
-    mem::ManuallyDrop, os::fd::RawFd, panic::UnwindSafe, ptr::NonNull, sync::atomic::Ordering,
-};
+#[cfg(target_family = "unix")]
+use std::os::fd::RawFd;
+use std::{mem::ManuallyDrop, panic::UnwindSafe, ptr::NonNull, sync::atomic::Ordering};
 
 use crate::RawSocketFd;
 
@@ -113,7 +113,10 @@ pub struct SocketRequest {
 #[derive(Clone, Copy, Debug)]
 pub struct FileIORequest {
     /// The fd
+    #[cfg(target_family = "unix")]
     pub(crate) fd: RawFd,
+    #[cfg(target_family = "windows")]
+    pub(crate) handle: *mut libc::c_void,
     /// Amount of read or write to do
     pub(crate) todo: u32,
     /// File position
@@ -207,7 +210,7 @@ impl Request {
     pub(crate) fn get_socket(&self) -> std::mem::ManuallyDrop<socket2::Socket> {
         use std::os::windows::io::FromRawSocket;
         std::mem::ManuallyDrop::new(unsafe {
-            socket2::Socket::from_raw_fd(self.op.socket.socket.inner as _)
+            socket2::Socket::from_raw_socket(self.op.socket.socket.inner as _)
         })
     }
 
@@ -225,7 +228,7 @@ impl Request {
         assert!(!self.is_concurrent());
         self.flags_and_op_code |= FLAG_CONCURRENT;
         self._win_header.hEvent =
-            completion_queue as *mut crate::request_queue::RequestQueue as *mut libc::c_void;
+            completion_queue as *const crate::request_queue::RequestQueue as *mut libc::c_void;
     }
     #[cfg(not(target_os = "windows"))]
     pub(crate) fn set_concurrent(&mut self, completion_queue: &crate::request_queue::RequestQueue) {

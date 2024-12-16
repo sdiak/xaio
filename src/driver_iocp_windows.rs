@@ -113,11 +113,7 @@ impl DriverIFace for DriverIOCP {
     unsafe fn cancel(&mut self, _req: NonNull<Request>) -> std::io::Result<()> {
         Err(Error::from(ErrorKind::NotFound))
     }
-    fn wait(
-        &mut self,
-        _ready_list: &mut crate::RequestList,
-        timeout_ms: i32,
-    ) -> std::io::Result<i32> {
+    fn wait(&mut self, _ready_list: &mut crate::ReadyList, timeout_ms: i32) -> std::io::Result<()> {
         let timeout_ms = if timeout_ms < 0 {
             0xFFFFFFFFu32
         } else {
@@ -135,11 +131,12 @@ impl DriverIFace for DriverIOCP {
             )
         }) != 0
         {
-            Ok(self.process_events(nentries as _))
+            self.process_events(nentries as _);
+            Ok(())
         } else {
             let err = unsafe { windows_sys::Win32::Foundation::GetLastError() };
             match err {
-                windows_sys::Win32::Foundation::WAIT_TIMEOUT => Ok(0),
+                windows_sys::Win32::Foundation::WAIT_TIMEOUT => Ok(()),
                 _ => Err(Error::from_raw_os_error(err as _)),
             }
         }

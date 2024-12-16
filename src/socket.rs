@@ -3,7 +3,7 @@ use std::os::fd::RawFd as Inner;
 #[cfg(target_os = "windows")]
 use std::os::windows::raw::SOCKET as Inner;
 
-use std::io::Result;
+use std::io::{Error, ErrorKind, Result};
 
 #[derive(Debug, Copy, PartialEq, Eq, Clone, PartialOrd, Ord, Hash)]
 pub struct RawSocketFd {

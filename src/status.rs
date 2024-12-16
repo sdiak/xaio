@@ -68,6 +68,7 @@ impl From<ErrorKind> for Status {
             #[cfg(not(target_os = "aix"))]
             ErrorKind::DirectoryNotEmpty => libc::ENOTEMPTY,
             ErrorKind::ReadOnlyFilesystem => libc::EROFS,
+            #[cfg(not(target_os = "windows"))]
             ErrorKind::StaleNetworkFileHandle => libc::ESTALE,
             ErrorKind::InvalidInput => libc::EINVAL,
             ErrorKind::TimedOut => libc::ETIMEDOUT,
@@ -108,5 +109,30 @@ impl From<Status> for Error {
         } else {
             Error::from(ErrorKind::Other)
         }
+    }
+}
+
+// #[cfg(target_family = "windows")]
+// fn raw_last_error_to_errno(win_error: i32) -> i32 {
+//     log::warn!("TODO:");
+//     win_error
+// }
+#[cfg(target_family = "windows")]
+impl From<Error> for Status {
+    fn from(value: Error) -> Self {
+        value.kind().into()
+    }
+}
+#[cfg(target_family = "windows")]
+impl From<Status> for Error {
+    fn from(val: Status) -> Self {
+        let val = val.value();
+        log::warn!("TODO:");
+        Error::from(ErrorKind::Other)
+        // if request::PENDING < val && val < 0 {
+        //     Error::from_raw_os_error(-val)
+        // } else {
+        //     Error::from(ErrorKind::Other)
+        // }
     }
 }
