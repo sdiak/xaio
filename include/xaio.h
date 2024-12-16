@@ -228,7 +228,7 @@ extern int32_t xcp_new(struct xcp_s **pport);
 int32_t xnew(struct xring_s **pring, struct xdriver_s *opt_driver);
 
 /**
- * Wait for up to `timeout_ms` for events, the wait will stop as soon as a completion event is present.
+ * Submit batched submissions then wait for up to `timeout_ms` for events, the wait will stop as soon as a completion event is present.
  *
  * # Arguments
  *   - `ring` the completion ring,
@@ -244,10 +244,10 @@ int32_t xnew(struct xring_s **pring, struct xdriver_s *opt_driver);
  *   -  `-EINVAL` when `capacity <= 0`
  *   -  `<0` the error code returned by the underlying subsystem
  */
-int32_t xwait(struct xring_s *ring,
-              struct xevent_s *events,
-              int32_t capacity,
-              int32_t timeout_ms);
+int32_t xsubmit_and_wait(struct xring_s *ring,
+                         struct xevent_s *events,
+                         int32_t capacity,
+                         int32_t timeout_ms);
 
 /**
  * Tries to cancel the submission associated to the given token.
@@ -261,6 +261,7 @@ int32_t xwait(struct xring_s *ring,
  * # Returns
  *   -  `0` on success
  *   -  `-EINVAL` when `ring == NULL`
+ *   -  `-EBUSY` when the completion queue is full, the caller should call `xsubmit_and_wait(..., timeout_ms=0)` and try again
  *   -  `-ENOENT` when the submission associated to the token were not found
  *   -  `-EALREADY` when the associated submission has progressed far enough that cancelation is no longer possible
  */
@@ -280,6 +281,8 @@ int32_t xcancel(struct xring_s *ring,
  * # Returns
  *   -  `0` on success
  *   -  `-EINVAL` when `ring == NULL`
+ *   -  `-EBUSY` when the submission queue or the completion queue is full, the caller
+ * should call `xsubmit_and_wait` and try again
  *   -  `-EEXIST` when `token` is already associated to a submission
  *   -  `-EINVAL` when `work_cb == (xwork_cb)0`
  *   -  `-ENOMEM` when the system is out of memory

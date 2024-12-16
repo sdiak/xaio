@@ -58,7 +58,9 @@ pub struct xevent_s {
     pub flags: u32,
     pub token: u64,
 }
-pub struct xring_s {}
+pub struct xring_s {
+    // TODO: for uring-like: keep track of unsubmited and commit them before exaustion
+}
 
 /// Creates a new ring.
 ///
@@ -75,7 +77,21 @@ pub unsafe extern "C" fn xnew(pring: *mut *mut xring_s, opt_driver: *mut driver:
     -libc::ENOMEM
 }
 
-/// Wait for up to `timeout_ms` for events, the wait will stop as soon as a completion event is present.
+/// Submit batched submissions.
+///
+/// # Arguments
+///   - `ring` the completion ring
+///
+/// # Returns
+///   -  `0` on success
+///   -  `-EINVAL` when `ring == NULL`
+///   -  `-EBUSY` when the completion queue is full, the caller should call `xsubmit_and_wait(..., timeout_ms=0)` instead
+///   -  `<0` the error code returned by the underlying subsystem
+pub unsafe extern "C" fn xsubmit(ring: *mut xring_s) -> i32 {
+    -libc::ENOSYS
+}
+
+/// Submit batched submissions then wait for up to `timeout_ms` for events, the wait will stop as soon as a completion event is present.
 ///
 /// # Arguments
 ///   - `ring` the completion ring,
@@ -91,7 +107,7 @@ pub unsafe extern "C" fn xnew(pring: *mut *mut xring_s, opt_driver: *mut driver:
 ///   -  `-EINVAL` when `capacity <= 0`
 ///   -  `<0` the error code returned by the underlying subsystem
 #[no_mangle]
-pub unsafe extern "C" fn xwait(
+pub unsafe extern "C" fn xsubmit_and_wait(
     ring: *mut xring_s,
     events: *mut xevent_s,
     capacity: i32,
@@ -111,6 +127,7 @@ pub unsafe extern "C" fn xwait(
 /// # Returns
 ///   -  `0` on success
 ///   -  `-EINVAL` when `ring == NULL`
+///   -  `-EBUSY` when the completion queue is full, the caller should call `xsubmit_and_wait(..., timeout_ms=0)` and try again
 ///   -  `-ENOENT` when the submission associated to the token were not found
 ///   -  `-EALREADY` when the associated submission has progressed far enough that cancelation is no longer possible
 #[no_mangle]
@@ -139,6 +156,8 @@ pub type xwork_cb = extern "C" fn(work_arg: *mut libc::c_void) -> i32;
 /// # Returns
 ///   -  `0` on success
 ///   -  `-EINVAL` when `ring == NULL`
+///   -  `-EBUSY` when the submission queue or the completion queue is full, the caller
+/// should call `xsubmit_and_wait` and try again
 ///   -  `-EEXIST` when `token` is already associated to a submission
 ///   -  `-EINVAL` when `work_cb == (xwork_cb)0`
 ///   -  `-ENOMEM` when the system is out of memory
