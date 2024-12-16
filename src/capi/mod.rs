@@ -13,6 +13,9 @@ use std::os::windows::raw::SOCKET as xsocket_t;
 // cbindgen --config cbindgen.toml --crate xaio
 mod driver;
 
+pub mod ring;
+pub use ring::*;
+
 #[cfg_attr(target_os = "linux", path = "driver_epoll_linux.rs")]
 #[cfg_attr(not(target_os = "linux"), path = "driver_epoll_unsupported.rs")]
 mod rawpoll;
@@ -58,82 +61,7 @@ pub struct xevent_s {
     pub flags: u32,
     pub token: u64,
 }
-pub struct xring_s {
-    // TODO: for uring-like: keep track of unsubmited and commit them before exaustion
-}
 
-/// Creates a new ring.
-///
-/// # Arguments
-///   - `pring` `*pring` receives the new ring address or `NULL` on error.
-///   - `opt_driver` driver to **move** to the ring or `NULL` to use the default driver.
-///
-/// # Returns
-///   -  `0` on success
-///   -  `-EINVAL` when `pring == NULL`
-///   -  `-ENOMEM` when the system is out of memory
-#[no_mangle]
-pub unsafe extern "C" fn xnew(pring: *mut *mut xring_s, opt_driver: *mut driver::xdriver_s) -> i32 {
-    -libc::ENOMEM
-}
-
-/// Submit batched submissions.
-///
-/// # Arguments
-///   - `ring` the completion ring
-///
-/// # Returns
-///   -  `0` on success
-///   -  `-EINVAL` when `ring == NULL`
-///   -  `-EBUSY` when the completion queue is full, the caller should call `xsubmit_and_wait(..., timeout_ms=0)` instead
-///   -  `<0` the error code returned by the underlying subsystem
-pub unsafe extern "C" fn xsubmit(ring: *mut xring_s) -> i32 {
-    -libc::ENOSYS
-}
-
-/// Submit batched submissions then wait for up to `timeout_ms` for events, the wait will stop as soon as a completion event is present.
-///
-/// # Arguments
-///   - `ring` the completion ring,
-///   - `events` an array to receive the completion events,
-///   - `capacity` the capacity of `events`,
-///   - `timeout_ms` the maximum amount of time to wait for events or `<0` for infinity,
-///
-/// # Returns
-///   -  `>0` the number of completion events stored in `events`
-///   -  `0` on timeout
-///   -  `-EINVAL` when `ring == NULL`
-///   -  `-EINVAL` when `events == NULL`
-///   -  `-EINVAL` when `capacity <= 0`
-///   -  `<0` the error code returned by the underlying subsystem
-#[no_mangle]
-pub unsafe extern "C" fn xsubmit_and_wait(
-    ring: *mut xring_s,
-    events: *mut xevent_s,
-    capacity: i32,
-    timeout_ms: i32,
-) -> i32 {
-    -libc::ENOSYS
-}
-
-/// Tries to cancel the submission associated to the given token.
-/// The submission associated to the token will still be retreived by `xring_wait` even
-/// when this function returns `0`.
-///
-/// # Arguments
-///   - `ring` the completion ring,
-///   - `token` a token associated to a submissions,
-///
-/// # Returns
-///   -  `0` on success
-///   -  `-EINVAL` when `ring == NULL`
-///   -  `-EBUSY` when the completion queue is full, the caller should call `xsubmit_and_wait(..., timeout_ms=0)` and try again
-///   -  `-ENOENT` when the submission associated to the token were not found
-///   -  `-EALREADY` when the associated submission has progressed far enough that cancelation is no longer possible
-#[no_mangle]
-pub unsafe extern "C" fn xcancel(ring: *mut xring_s, token: u64, all: bool) -> i32 {
-    -libc::ENOSYS
-}
 
 /// Work callback.
 ///

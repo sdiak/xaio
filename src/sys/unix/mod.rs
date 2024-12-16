@@ -11,7 +11,13 @@ pub use event::*;
 
 #[cfg(target_os = "linux")]
 mod epoll;
+#[cfg(target_os = "linux")]
 pub use epoll::*;
+
+#[cfg(target_os = "linux")]
+mod driver_linux;
+#[cfg(target_os = "linux")]
+pub use driver_linux::*;
 
 mod stat;
 pub use stat::*;

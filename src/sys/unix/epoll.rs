@@ -7,7 +7,7 @@ use std::{
 
 #[derive(Debug)]
 pub struct EPoll {
-    epfd: OwnedFd,
+    epfd: libc::c_int,
 }
 
 const _: () = assert!(
@@ -22,6 +22,9 @@ const _: () = assert!(
         && Interest::RDHANG_UP.bits() == libc::EPOLLRDHUP as u32
 );
 impl EPoll {
+    pub fn invalid() -> Self {
+        Self{epfd: -1}
+    }
     pub fn new(close_on_exec: bool) -> Result<Self> {
         let epfd = unsafe {
             libc::epoll_create1(if close_on_exec {
@@ -32,7 +35,7 @@ impl EPoll {
         };
         if epfd >= 0 {
             Ok(EPoll {
-                epfd: unsafe { OwnedFd::from_raw_fd(epfd) },
+                epfd,
             })
         } else {
             Err(std::io::Error::last_os_error())
@@ -40,10 +43,11 @@ impl EPoll {
     }
 
     pub fn try_clone(&self) -> Result<Self> {
-        let epfd = unsafe { libc::dup(self.epfd.as_raw_fd()) };
+        let epfd = unsafe { libc::dup(self.epfd) };
+        // TODO: is clo exec inherited ???
         if epfd >= 0 {
             Ok(EPoll {
-                epfd: unsafe { OwnedFd::from_raw_fd(epfd) },
+                epfd,
             })
         } else {
             Err(std::io::Error::last_os_error())
@@ -55,10 +59,17 @@ impl EPoll {
             events: events & !Interest::ONESHOT.bits(),
             u64: token as u64,
         };
-        if unsafe { libc::epoll_ctl(self.epfd.as_raw_fd(), op, fd, &mut event as _) } >= 0 {
+        if unsafe { libc::epoll_ctl(self.epfd, op, fd, &mut event as _) } >= 0 {
             Ok(())
         } else {
             Err(Error::last_os_error())
+        }
+    }
+}
+impl Drop for EPoll {
+    fn drop(&mut self) {
+        if self.epfd >= 0 {
+            crate::utils::libc_close_log_on_error(self.epfd);
         }
     }
 }

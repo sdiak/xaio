@@ -32,6 +32,26 @@
 
 #define XDRIVER_FLAG_CLOSE_ON_EXEC 2u
 
+/**
+ * Tries to reuse the sharable driver handle in `xdriver_params_s::attach_handle
+ */
+#define XCONFIG_FLAG_ATTACH_SINGLE_ISSUER (1u << 0)
+
+/**
+ * Clone or share resources with the given handle
+ */
+#define XCONFIG_FLAG_ATTACH_HANDLE (1u << 1)
+
+/**
+ * Close the handle on exec
+ */
+#define XCONFIG_FLAG_CLOSE_ON_EXEC (1u << 2)
+
+/**
+ * Use the most efficient polling mecanism available (for example io_uring will use epoll for polling)
+ */
+#define XCONFIG_FLAG_FAST_POLL (1u << 3)
+
 struct xring_s;
 
 /**
@@ -44,7 +64,17 @@ struct xcp_s {
   int64_t prv__now;
 };
 
-typedef bool (*xdriver_is_supported_m)(void);
+/**
+ * Work callback.
+ *
+ * # Arguments
+ *   - `work_arg` argument passed to `xring_submit_work`
+ *
+ * # Returns
+ *   -  `>=0` on success
+ *   -  `<0` on error
+ */
+typedef int32_t (*xwork_cb)(void *work_arg);
 
 /**
  * IO Driver parameters
@@ -76,6 +106,8 @@ struct xdriver_params_s {
   int32_t max_number_of_fd_hint;
   int32_t reserved_;
 };
+
+typedef bool (*xdriver_is_supported_m)(void);
 
 typedef struct xdriver_params_s *_Nonnull (*xdriver_default_params_m)(struct xdriver_params_s *_Nonnull params);
 
@@ -177,23 +209,45 @@ struct xdriver_s {
   struct xdriver_params_s params;
 };
 
+/**
+ * IO Driver parameters
+ */
+struct xconfig_s {
+  /**
+   * submission queue depth
+   */
+  uint32_t submission_queue_depth;
+  /**
+   * completion queue depth
+   */
+  uint32_t completion_queue_depth;
+  /**
+   * kernel busy-polling loop timeout in milliseconds, a value of 0 deactivate kernel polling
+   */
+  uint32_t kernel_poll_timeout_ms;
+  /**
+   * Flags
+   */
+  uint32_t flags;
+  /**
+   * A sharable driver handle when (flags & XDRIVER_FLAG_ATTACH_HANDLE)
+   */
+  uintptr_t attach_handle;
+  /**
+   * An hint on the maximal number of file descriptor
+   */
+  uint32_t max_number_of_fd_hint;
+  /**
+   * An hint on the maximum number of io threads (Kernel or Userspace) or 0 for defaults
+   */
+  uint32_t max_number_of_threads;
+};
+
 struct xevent_s {
   int32_t status;
   uint32_t flags;
   uint64_t token;
 };
-
-/**
- * Work callback.
- *
- * # Arguments
- *   - `work_arg` argument passed to `xring_submit_work`
- *
- * # Returns
- *   -  `>=0` on success
- *   -  `<0` on error
- */
-typedef int32_t (*xwork_cb)(void *work_arg);
 
 #ifdef __cplusplus
 extern "C" {
@@ -212,62 +266,6 @@ extern "C" {
  *   -  `-ENOMEM` when the system is out of memory
  */
 extern int32_t xcp_new(struct xcp_s **pport);
-
-/**
- * Creates a new ring.
- *
- * # Arguments
- *   - `pring` `*pring` receives the new ring address or `NULL` on error.
- *   - `opt_driver` driver to **move** to the ring or `NULL` to use the default driver.
- *
- * # Returns
- *   -  `0` on success
- *   -  `-EINVAL` when `pring == NULL`
- *   -  `-ENOMEM` when the system is out of memory
- */
-int32_t xnew(struct xring_s **pring, struct xdriver_s *opt_driver);
-
-/**
- * Submit batched submissions then wait for up to `timeout_ms` for events, the wait will stop as soon as a completion event is present.
- *
- * # Arguments
- *   - `ring` the completion ring,
- *   - `events` an array to receive the completion events,
- *   - `capacity` the capacity of `events`,
- *   - `timeout_ms` the maximum amount of time to wait for events or `<0` for infinity,
- *
- * # Returns
- *   -  `>0` the number of completion events stored in `events`
- *   -  `0` on timeout
- *   -  `-EINVAL` when `ring == NULL`
- *   -  `-EINVAL` when `events == NULL`
- *   -  `-EINVAL` when `capacity <= 0`
- *   -  `<0` the error code returned by the underlying subsystem
- */
-int32_t xsubmit_and_wait(struct xring_s *ring,
-                         struct xevent_s *events,
-                         int32_t capacity,
-                         int32_t timeout_ms);
-
-/**
- * Tries to cancel the submission associated to the given token.
- * The submission associated to the token will still be retreived by `xring_wait` even
- * when this function returns `0`.
- *
- * # Arguments
- *   - `ring` the completion ring,
- *   - `token` a token associated to a submissions,
- *
- * # Returns
- *   -  `0` on success
- *   -  `-EINVAL` when `ring == NULL`
- *   -  `-EBUSY` when the completion queue is full, the caller should call `xsubmit_and_wait(..., timeout_ms=0)` and try again
- *   -  `-ENOENT` when the submission associated to the token were not found
- *   -  `-EALREADY` when the associated submission has progressed far enough that cancelation is no longer possible
- */
-int32_t xcancel(struct xring_s *ring,
-                uint64_t token,
-                bool all);
 
 /**
  * Submit some work to the IO thread pool
@@ -313,6 +311,62 @@ __attribute__((warn_unused_result))
 int32_t xdriver_new(struct xdriver_s **pdriver,
                     const struct xdriver_class_s *opt_clazz,
                     const struct xdriver_params_s *opt_params);
+
+/**
+ * Creates a new ring.
+ *
+ * # Arguments
+ *   - `pring` `*pring` receives the new ring address or `NULL` on error.
+ *   - `opt_config` ring configuration or `NULL` to use the default configuration.
+ *
+ * # Returns
+ *   -  `0` on success
+ *   -  `-EINVAL` when `pring == NULL`
+ *   -  `-ENOMEM` when the system is out of memory
+ */
+int32_t xnew(struct xring_s **pring, struct xconfig_s *opt_config);
+
+/**
+ * Submit batched submissions then wait for up to `timeout_ms` for events, the wait will stop as soon as a completion event is present.
+ *
+ * # Arguments
+ *   - `ring` the completion ring,
+ *   - `events` an array to receive the completion events,
+ *   - `capacity` the capacity of `events`,
+ *   - `timeout_ms` the maximum amount of time to wait for events or `<0` for infinity,
+ *
+ * # Returns
+ *   -  `>0` the number of completion events stored in `events`
+ *   -  `0` on timeout
+ *   -  `-EINVAL` when `ring == NULL`
+ *   -  `-EINVAL` when `events == NULL`
+ *   -  `-EINVAL` when `capacity <= 0`
+ *   -  `<0` the error code returned by the underlying subsystem
+ */
+int32_t xsubmit_and_wait(struct xring_s *ring,
+                         struct xevent_s *events,
+                         int32_t capacity,
+                         int32_t timeout_ms);
+
+/**
+ * Tries to cancel the submission associated to the given token.
+ * The submission associated to the token will still be retreived by `xring_wait` even
+ * when this function returns `0`.
+ *
+ * # Arguments
+ *   - `ring` the completion ring,
+ *   - `token` a token associated to a submissions,
+ *
+ * # Returns
+ *   -  `0` on success
+ *   -  `-EINVAL` when `ring == NULL`
+ *   -  `-EBUSY` when the completion queue is full, the caller should call `xsubmit_and_wait(..., timeout_ms=0)` and try again
+ *   -  `-ENOENT` when the submission associated to the token were not found
+ *   -  `-EALREADY` when the associated submission has progressed far enough that cancelation is no longer possible
+ */
+int32_t xcancel(struct xring_s *ring,
+                uint64_t token,
+                bool all);
 
 extern int *errno_location(void);
 

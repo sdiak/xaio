@@ -130,4 +130,5 @@ pub fn main() {
         "\nSizeof Box<dyn>: {}",
         std::mem::size_of::<std::pin::Pin<Box<dyn std::future::Future<Output = i64>>>>()
     );
+    println!("Probe: {:?}", &*xaio::sys::PROBE);
 }
