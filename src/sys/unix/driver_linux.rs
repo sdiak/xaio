@@ -1,15 +1,19 @@
 use super::{EPoll, Event};
+use crate::capi::xconfig_s;
+use bitflags::bitflags;
 use num;
+use std::fmt::Debug;
 use std::io::{Error, Result};
 use std::mem::MaybeUninit;
 use std::ptr::NonNull;
 use std::sync::LazyLock;
 use uring_sys2;
+use uring_sys2::io_uring_op as Op;
 
 pub static PROBE: LazyLock<Probe> = LazyLock::new(Probe::new);
 
 #[derive(Debug)]
-pub(crate) struct Driver {
+pub struct Driver {
     ring: URing,
     epoll: EPoll, // -1 when polling using ring
     waker: Event, // TODO: register
@@ -17,7 +21,7 @@ pub(crate) struct Driver {
 }
 
 impl Driver {
-    pub(crate) fn new(config_hints: &crate::capi::xconfig_s) -> Result<Self> {
+    pub fn new(config_hints: &crate::capi::xconfig_s) -> Result<Self> {
         let mut config = *config_hints;
         config.submission_queue_depth = num::clamp(config.submission_queue_depth, 16, 4096);
         if config.completion_queue_depth < config.submission_queue_depth * 2 {
@@ -49,16 +53,49 @@ impl Driver {
             config,
         })
     }
+    pub fn default() -> Result<Self> {
+        Self::new(&xconfig_s::default())
+    }
 }
 
-#[derive(Debug)]
+bitflags! {
+    #[derive(Debug)]
+    pub struct Features: u32 {
+        const SINGLE_MMAP = uring_sys2::IORING_FEAT_SINGLE_MMAP;
+        const NODROP = uring_sys2::IORING_FEAT_NODROP;
+        const SUBMIT_STABLE = uring_sys2::IORING_FEAT_SUBMIT_STABLE;
+        const RW_CUR_POS = uring_sys2::IORING_FEAT_RW_CUR_POS;
+        const CUR_PERSONALITY = uring_sys2::IORING_FEAT_CUR_PERSONALITY;
+        const FAST_POLL = uring_sys2::IORING_FEAT_FAST_POLL;
+        const POLL_32BITS = uring_sys2::IORING_FEAT_POLL_32BITS;
+        const SQPOLL_NONFIXED = uring_sys2::IORING_FEAT_SQPOLL_NONFIXED;
+        const EXT_ARG = uring_sys2::IORING_FEAT_EXT_ARG;
+        const NATIVE_WORKERS = uring_sys2::IORING_FEAT_NATIVE_WORKERS;
+        const RSRC_TAGS = uring_sys2::IORING_FEAT_RSRC_TAGS;
+        const CQE_SKIP = uring_sys2::IORING_FEAT_CQE_SKIP;
+        const LINKED_FILE = uring_sys2::IORING_FEAT_LINKED_FILE;
+        const REG_REG_RING = uring_sys2::IORING_FEAT_REG_REG_RING;
+        const RECVSEND_BUNDLE = uring_sys2::IORING_FEAT_RECVSEND_BUNDLE;
+        const MIN_TIMEOUT = uring_sys2::IORING_FEAT_MIN_TIMEOUT;
+    }
+}
+
 struct URing {
     ring: uring_sys2::io_uring,
-    features: u32,
+    features: Features,
+}
+impl Debug for URing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("URing")
+            .field("ring.fd", &self.ring.ring_fd)
+            .field("features", &self.features)
+            .finish()
+    }
 }
 impl Drop for URing {
     fn drop(&mut self) {
         if self.ring.ring_fd >= 0 {
+            println!("Drop uring({})", self.ring.ring_fd);
             unsafe { uring_sys2::io_uring_queue_exit(&mut self.ring as _) };
         }
     }
@@ -69,7 +106,7 @@ impl URing {
         ring.ring_fd = -1;
         Self {
             ring,
-            features: 0u32,
+            features: Features::empty(),
         }
     }
     fn new(config: &mut crate::capi::xconfig_s, probe: &Probe) -> Result<Self> {
@@ -78,6 +115,8 @@ impl URing {
         let mut ring = unsafe { MaybeUninit::<uring_sys2::io_uring>::zeroed().assume_init() };
         let mut params =
             unsafe { MaybeUninit::<uring_sys2::io_uring_params>::zeroed().assume_init() };
+        params.sq_entries = config.submission_queue_depth;
+        params.cq_entries = config.completion_queue_depth;
         params.flags = uring_sys2::IORING_SETUP_CQSIZE;
         if (config.flags & crate::capi::XCONFIG_FLAG_ATTACH_HANDLE) != 0
             && probe.kernel.has_attach_wq()
@@ -107,31 +146,71 @@ impl URing {
         if status >= 0 {
             Ok(Self {
                 ring,
-                features: params.features,
+                features: Features::from_bits_retain(params.features),
             })
         } else {
+            println!("ICI");
             Err(Error::from_raw_os_error(-status))
         }
     }
 
+    #[cfg(feature = "iouring-native-sqe")]
+    #[inline]
+    fn get_sqe(&mut self) -> Option<NonNull<uring_sys2::io_uring_sqe>> {
+        let sq = &mut self.ring.sq;
+        let next: libc::c_uint = sq.sqe_tail.wrapping_add(1);
+        let shift: u32 = ((self.ring.flags & uring_sys2::IORING_SETUP_SQE128) != 0) as _;
+        let head = if (self.ring.flags & uring_sys2::IORING_SETUP_SQPOLL) == 0 {
+            unsafe { *sq.khead }
+        } else {
+            let khead = unsafe {
+                &mut *std::mem::transmute::<*mut u32, *mut std::sync::atomic::AtomicU32>(sq.khead)
+            };
+            khead.load(std::sync::atomic::Ordering::Acquire)
+        };
+        if next.wrapping_sub(head) <= sq.ring_entries {
+            let sqe = unsafe {
+                sq.sqes
+                    .offset((sq.sqe_tail & sq.ring_mask).wrapping_shl(shift) as _)
+            };
+            sq.sqe_tail = next;
+            Some(Sqe(sqe).initialize())
+        } else {
+            None
+        }
+    }
+
+    #[cfg(not(feature = "iouring-native-sqe"))]
+    #[inline(always)]
     fn get_sqe(&mut self) -> Option<NonNull<uring_sys2::io_uring_sqe>> {
         NonNull::new(unsafe { uring_sys2::io_uring_get_sqe(&mut self.ring as _) })
     }
 }
 
 #[repr(transparent)]
-struct Sqe(*mut uring_sys2::io_uring_sqe);
+pub struct Sqe(*mut uring_sys2::io_uring_sqe);
 
 impl Sqe {
-    #[inline(always)]
-    fn prep_read_write(
-        &mut self,
-        op: libc::c_int,
-        fd: libc::c_int,
-        addr: *mut libc::c_void,
-        len: u32,
-        offset: u64,
-    ) {
+    #[cfg(feature = "iouring-native-sqe")]
+    #[inline]
+    fn initialize(self) -> NonNull<uring_sys2::io_uring_sqe> {
+        let sqe = unsafe { &mut *self.0 };
+        sqe.flags = 0;
+        sqe.ioprio = 0;
+        sqe.__bindgen_anon_3.rw_flags = 0;
+        sqe.__bindgen_anon_4.buf_index = 0;
+        sqe.personality = 0;
+        sqe.__bindgen_anon_5.file_index = 0;
+        unsafe {
+            sqe.__bindgen_anon_6.__bindgen_anon_1.as_mut().addr3 = 0;
+            sqe.__bindgen_anon_6.__bindgen_anon_1.as_mut().__pad2[0] = 0;
+            NonNull::new_unchecked(sqe as *mut uring_sys2::io_uring_sqe)
+        }
+    }
+
+    #[cfg(feature = "iouring-native-sqe")]
+    #[inline]
+    fn prep_rw(&mut self, op: Op, fd: libc::c_int, addr: *mut libc::c_void, len: u32, offset: u64) {
         let sqe = unsafe { &mut *self.0 };
         sqe.opcode = op as _;
         sqe.fd = fd;
@@ -139,10 +218,16 @@ impl Sqe {
         sqe.__bindgen_anon_2.addr = addr as usize as _;
         sqe.len = len;
     }
+
     #[inline(always)]
     fn prep_read(&mut self, fd: libc::c_int, buf: *mut libc::c_void, nbytes: u32, offset: u64) {
-        // TODO: use prep_read_write after tests
-        unsafe { uring_sys2::io_uring_prep_read(self.0, fd, buf, nbytes, offset) };
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "iouring-native-sqe")] {
+                self.prep_rw(Op::IORING_OP_READ, fd, buf, nbytes, offset);
+            } else  {
+                unsafe { uring_sys2::io_uring_prep_read(self.0, fd, buf, nbytes, offset) };
+            }
+        }
     }
 }
 

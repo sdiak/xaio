@@ -1,3 +1,4 @@
+use std::usize;
 
 pub struct xring_s {
     // TODO: for uring-like: keep track of unsubmited and commit them before exaustion
@@ -31,7 +32,19 @@ pub struct xconfig_s {
     /// An hint on the maximum number of io threads (Kernel or Userspace) or 0 for defaults
     pub max_number_of_threads: u32,
 }
-
+impl Default for xconfig_s {
+    fn default() -> Self {
+        Self {
+            submission_queue_depth: 64,
+            completion_queue_depth: 256,
+            kernel_poll_timeout_ms: 0,
+            flags: XCONFIG_FLAG_FAST_POLL | XCONFIG_FLAG_CLOSE_ON_EXEC,
+            attach_handle: usize::MAX,
+            max_number_of_fd_hint: 1024,
+            max_number_of_threads: 0,
+        }
+    }
+}
 
 /// Creates a new ring.
 ///

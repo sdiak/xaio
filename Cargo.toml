@@ -22,6 +22,9 @@ num_cpus = "1.0"
 crossbeam-deque = "0.8"
 rand = "0.8"
 
+[features]
+iouring-native-sqe = []
+default = ["iouring-native-sqe"]
 
 [dev-dependencies]
 rand = "0.8.5"
