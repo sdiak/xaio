@@ -44,7 +44,23 @@ struct xcp_s {
   int64_t prv__now;
 };
 
-typedef bool (*xdriver_is_supported_m)(void);
+struct xevent_s {
+  int32_t status;
+  uint32_t flags;
+  uint64_t token;
+};
+
+/**
+ * Work callback.
+ *
+ * # Arguments
+ *   - `work_arg` argument passed to `xring_submit_work`
+ *
+ * # Returns
+ *   -  `>=0` on success
+ *   -  `<0` on error
+ */
+typedef int32_t (*xwork_cb)(void *work_arg);
 
 /**
  * IO Driver parameters
@@ -76,6 +92,8 @@ struct xdriver_params_s {
   int32_t max_number_of_fd_hint;
   int32_t reserved_;
 };
+
+typedef bool (*xdriver_is_supported_m)(void);
 
 typedef struct xdriver_params_s *_Nonnull (*xdriver_default_params_m)(struct xdriver_params_s *_Nonnull params);
 
@@ -177,24 +195,6 @@ struct xdriver_s {
   struct xdriver_params_s params;
 };
 
-struct xevent_s {
-  int32_t status;
-  uint32_t flags;
-  uint64_t token;
-};
-
-/**
- * Work callback.
- *
- * # Arguments
- *   - `work_arg` argument passed to `xring_submit_work`
- *
- * # Returns
- *   -  `>=0` on success
- *   -  `<0` on error
- */
-typedef int32_t (*xwork_cb)(void *work_arg);
-
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -218,14 +218,13 @@ extern int32_t xcp_new(struct xcp_s **pport);
  *
  * # Arguments
  *   - `pring` `*pring` receives the new ring address or `NULL` on error.
- *   - `opt_driver` driver to **move** to the ring or `NULL` to use the default driver.
  *
  * # Returns
  *   -  `0` on success
  *   -  `-EINVAL` when `pring == NULL`
  *   -  `-ENOMEM` when the system is out of memory
  */
-int32_t xnew(struct xring_s **pring, struct xdriver_s *opt_driver);
+int32_t xring_new(struct xring_s **pring);
 
 /**
  * Submit batched submissions then wait for up to `timeout_ms` for events, the wait will stop as soon as a completion event is present.
@@ -244,10 +243,10 @@ int32_t xnew(struct xring_s **pring, struct xdriver_s *opt_driver);
  *   -  `-EINVAL` when `capacity <= 0`
  *   -  `<0` the error code returned by the underlying subsystem
  */
-int32_t xsubmit_and_wait(struct xring_s *ring,
-                         struct xevent_s *events,
-                         int32_t capacity,
-                         int32_t timeout_ms);
+int32_t xwait(struct xring_s *ring,
+              struct xevent_s *events,
+              int32_t capacity,
+              int32_t timeout_ms);
 
 /**
  * Tries to cancel the submission associated to the given token.
