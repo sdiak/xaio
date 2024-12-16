@@ -112,12 +112,17 @@ impl URing {
     fn new(config: &mut crate::capi::xconfig_s, probe: &Probe) -> Result<Self> {
         // TODO:  SINGLE ISSUER TASKRUN, ...
         // https://manpages.debian.org/unstable/liburing-dev/io_uring_setup.2.en.html
+        // https://nick-black.com/dankwiki/index.php/Io_uring
+        // https://tchaloupka.github.io/during/during.io_uring.SetupFlags.html
         let mut ring = unsafe { MaybeUninit::<uring_sys2::io_uring>::zeroed().assume_init() };
         let mut params =
             unsafe { MaybeUninit::<uring_sys2::io_uring_params>::zeroed().assume_init() };
         params.sq_entries = config.submission_queue_depth;
         params.cq_entries = config.completion_queue_depth;
         params.flags = uring_sys2::IORING_SETUP_CQSIZE;
+        if probe.kernel.ge(5, 6) {
+            params.flags |= uring_sys2::IORING_SETUP_CLAMP;
+        }
         if (config.flags & crate::capi::XCONFIG_FLAG_ATTACH_HANDLE) != 0
             && probe.kernel.has_attach_wq()
         {
@@ -127,15 +132,25 @@ impl URing {
             config.flags &= !crate::capi::XCONFIG_FLAG_ATTACH_HANDLE;
             params.wq_fd = -1i32 as _;
         }
-        if config.kernel_poll_timeout_ms > 0 && probe.kernel.has_sq_thread_idle() {
+        // Prefer COOP_TASKRUN to SQPOLL unless user ask for SQPOLL and it's supported
+        if config.kernel_poll_timeout_ms > 0
+            && probe.kernel.has_sq_thread_idle()
+            && (config.flags & crate::capi::XCONFIG_FLAG_ATTACH_SINGLE_ISSUER) != 0
+        {
             params.sq_thread_idle = config.kernel_poll_timeout_ms;
             params.flags |= uring_sys2::IORING_SETUP_SQPOLL;
+            todo!();
         } else {
+            config.flags &= !crate::capi::XCONFIG_FLAG_ATTACH_SINGLE_ISSUER;
+            if probe.kernel.has_setup_coop_taskrun() {
+                params.flags |= uring_sys2::IORING_SETUP_COOP_TASKRUN;
+            }
             config.kernel_poll_timeout_ms = 0;
         }
         if probe.kernel.has_setup_submit_all() {
             params.flags |= uring_sys2::IORING_SETUP_SUBMIT_ALL;
         }
+
         let status = unsafe {
             uring_sys2::io_uring_queue_init_params(
                 params.sq_entries,
@@ -144,6 +159,8 @@ impl URing {
             )
         };
         if status >= 0 {
+            config.submission_queue_depth = ring.sq.ring_entries;
+            config.completion_queue_depth = ring.cq.ring_entries;
             Ok(Self {
                 ring,
                 features: Features::from_bits_retain(params.features),
@@ -324,6 +341,9 @@ impl KernelVersion {
     }
     fn has_setup_submit_all(&self) -> bool {
         self.ge(5, 18)
+    }
+    fn has_setup_coop_taskrun(&self) -> bool {
+        self.ge(5, 19)
     }
     fn has_single_issuer(&self) -> bool {
         self.major >= 6
