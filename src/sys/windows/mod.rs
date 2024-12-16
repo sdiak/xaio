@@ -1,6 +1,8 @@
 mod event;
 pub use event::*;
 mod iocp;
+mod driver_windows;
+pub use driver_windows::*;
 
 use std::{
     ffi::CStr,
