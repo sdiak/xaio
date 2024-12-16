@@ -64,12 +64,6 @@ struct xcp_s {
   int64_t prv__now;
 };
 
-struct xevent_s {
-  int32_t status;
-  uint32_t flags;
-  uint64_t token;
-};
-
 /**
  * Work callback.
  *
@@ -249,6 +243,12 @@ struct xconfig_s {
   uint32_t max_number_of_threads;
 };
 
+struct xevent_s {
+  int32_t status;
+  uint32_t flags;
+  uint64_t token;
+};
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -266,61 +266,6 @@ extern "C" {
  *   -  `-ENOMEM` when the system is out of memory
  */
 extern int32_t xcp_new(struct xcp_s **pport);
-
-/**
- * Creates a new ring.
- *
- * # Arguments
- *   - `pring` `*pring` receives the new ring address or `NULL` on error.
- *
- * # Returns
- *   -  `0` on success
- *   -  `-EINVAL` when `pring == NULL`
- *   -  `-ENOMEM` when the system is out of memory
- */
-int32_t xring_new(struct xring_s **pring);
-
-/**
- * Submit batched submissions then wait for up to `timeout_ms` for events, the wait will stop as soon as a completion event is present.
- *
- * # Arguments
- *   - `ring` the completion ring,
- *   - `events` an array to receive the completion events,
- *   - `capacity` the capacity of `events`,
- *   - `timeout_ms` the maximum amount of time to wait for events or `<0` for infinity,
- *
- * # Returns
- *   -  `>0` the number of completion events stored in `events`
- *   -  `0` on timeout
- *   -  `-EINVAL` when `ring == NULL`
- *   -  `-EINVAL` when `events == NULL`
- *   -  `-EINVAL` when `capacity <= 0`
- *   -  `<0` the error code returned by the underlying subsystem
- */
-int32_t xwait(struct xring_s *ring,
-              struct xevent_s *events,
-              int32_t capacity,
-              int32_t timeout_ms);
-
-/**
- * Tries to cancel the submission associated to the given token.
- * The submission associated to the token will still be retreived by `xring_wait` even
- * when this function returns `0`.
- *
- * # Arguments
- *   - `ring` the completion ring,
- *   - `token` a token associated to a submissions,
- *
- * # Returns
- *   -  `0` on success
- *   -  `-EINVAL` when `ring == NULL`
- *   -  `-EBUSY` when the completion queue is full, the caller should call `xsubmit_and_wait(..., timeout_ms=0)` and try again
- *   -  `-ENOENT` when the submission associated to the token were not found
- *   -  `-EALREADY` when the associated submission has progressed far enough that cancelation is no longer possible
- */
-int32_t xcancel(struct xring_s *ring,
-                uint64_t token,
-                bool all);
 
 /**
  * Submit some work to the IO thread pool
@@ -398,10 +343,10 @@ int32_t xnew(struct xring_s **pring, struct xconfig_s *opt_config);
  *   -  `-EINVAL` when `capacity <= 0`
  *   -  `<0` the error code returned by the underlying subsystem
  */
-int32_t xsubmit_and_wait(struct xring_s *ring,
-                         struct xevent_s *events,
-                         int32_t capacity,
-                         int32_t timeout_ms);
+int32_t xwait(struct xring_s *ring,
+              struct xevent_s *events,
+              int32_t capacity,
+              int32_t timeout_ms);
 
 /**
  * Tries to cancel the submission associated to the given token.
@@ -422,6 +367,28 @@ int32_t xsubmit_and_wait(struct xring_s *ring,
 int32_t xcancel(struct xring_s *ring,
                 uint64_t token,
                 bool all);
+
+/**
+ * Submit batched submissions then wait for up to `timeout_ms` for events, the wait will stop as soon as a completion event is present.
+ *
+ * # Arguments
+ *   - `ring` the completion ring,
+ *   - `events` an array to receive the completion events,
+ *   - `capacity` the capacity of `events`,
+ *   - `timeout_ms` the maximum amount of time to wait for events or `<0` for infinity,
+ *
+ * # Returns
+ *   -  `>0` the number of completion events stored in `events`
+ *   -  `0` on timeout
+ *   -  `-EINVAL` when `ring == NULL`
+ *   -  `-EINVAL` when `events == NULL`
+ *   -  `-EINVAL` when `capacity <= 0`
+ *   -  `<0` the error code returned by the underlying subsystem
+ */
+int32_t xsubmit_and_wait(struct xring_s *ring,
+                         struct xevent_s *events,
+                         int32_t capacity,
+                         int32_t timeout_ms);
 
 extern int *errno_location(void);
 
