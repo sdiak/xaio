@@ -49,8 +49,6 @@ fn main() {
     cbindgen::Builder::new()
         .with_crate(crate_dir)
         .with_config(config)
-        .with_define("unix", "UNIX", "UNIX")
-        .with_define("windows", "WINDOWS", "WINDOWS")
         .generate()
         .expect("Unable to generate bindings")
         .write_to_file("include/xaio.h");
