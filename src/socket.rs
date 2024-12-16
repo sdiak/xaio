@@ -3,7 +3,7 @@ use std::os::fd::RawFd as Inner;
 #[cfg(target_os = "windows")]
 use std::os::windows::raw::SOCKET as Inner;
 
-use std::io::{Error, ErrorKind, Result};
+use std::io::Result;
 
 #[derive(Debug, Copy, PartialEq, Eq, Clone, PartialOrd, Ord, Hash)]
 pub struct RawSocketFd {
@@ -51,6 +51,8 @@ pub fn socketpair(
     typ: socket2::Type,
     protocol: Option<socket2::Protocol>,
 ) -> Result<(socket2::Socket, socket2::Socket)> {
+    use std::io::{ErrorKind, Result};
+
     /* TODO: try UNIX
     https://devblogs.microsoft.com/commandline/af_unix-comes-to-windows/
     https://github.com/rhysd/winver/blob/main/Cargo.toml detect > 10.??? and use UNIX

@@ -55,13 +55,14 @@ impl DriverEPoll {
             buffer,
         })
     }
-    fn process_events(&mut self, nevents: usize) -> i32 {
-        let mut nuser_events = 0i32;
-        for _ in 0usize..nevents {
-            nuser_events += 1 as i32; // FIXME:
-            todo!();
-        }
-        nuser_events
+    fn process_events(&mut self, _nevents: usize) -> i32 {
+        // let mut nuser_events = 0i32;
+        // for _ in 0usize..nevents {
+        //     nuser_events += 1 as i32; // FIXME:
+        //     todo!();
+        // }
+        // nuser_events
+        todo!()
     }
 }
 
@@ -84,7 +85,7 @@ impl DriverIFace for DriverEPoll {
         Err(Error::from(ErrorKind::NotFound))
     }
     fn wait(&mut self, _ready_list: &mut crate::ReadyList, timeout_ms: i32) -> std::io::Result<()> {
-        let mut n_user_events = 0i32;
+        // let n_user_events = 0i32;
         self.epoll.select(&mut self.buffer, timeout_ms)?;
         // for ev in self.buffer.iter() {
         //     if ev.token as usize != WAKE_TOKEN {

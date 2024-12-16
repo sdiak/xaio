@@ -3,8 +3,6 @@ use crate::{
 };
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::io::Error;
-use std::mem::{zeroed, ManuallyDrop, MaybeUninit};
-use std::ops::{Deref, DerefMut};
 use std::panic::UnwindSafe;
 use std::ptr::NonNull;
 use std::rc::Rc;
@@ -81,7 +79,7 @@ impl Ring {
         };
         unsafe { thiz.concurrent.park_end(&mut ready) };
         let mut it = ready.head;
-        let mut n_events = ready.len() as i32;
+        let n_events = ready.len() as i32;
         while !it.is_null() {
             let req = it;
             it = unsafe { (*it).list_get_next(Ordering::Relaxed) };
@@ -156,7 +154,7 @@ impl Ring {
     ) -> Result<DropReqOnPanic> {
         let mut flags = FLAG_INITIALIZED | opcode as u32;
         let mut memory = match memory {
-            Some(mut memory) => {
+            Some(memory) => {
                 if !unsafe { memory.as_ref().is_new() } {
                     return Err(Error::from(ErrorKind::InvalidInput));
                 }
