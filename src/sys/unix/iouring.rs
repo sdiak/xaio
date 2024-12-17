@@ -1,9 +1,10 @@
-use crate::sys::ThreadId;
+use crate::sys::{unix::eventfd::RawEventFd, ThreadId};
 use bitflags::bitflags;
 use std::cell::RefCell;
 use std::fmt::Debug;
 use std::io::{Error, ErrorKind, Result};
 use std::mem::MaybeUninit;
+use std::os::fd::AsRawFd;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
@@ -167,10 +168,12 @@ pub struct URing {
 struct Inner {
     ring: uring_sys2::io_uring,
     owner_thread_id: ThreadId,
+    waker: RawEventFd,
     shared_lock: Mutex<()>,
     local_lock: RefCell<()>,
     features: Feature,
     need_init: AtomicBool,
+    waker_buffer: u64,
 }
 
 impl Debug for Inner {
@@ -203,6 +206,8 @@ impl URing {
                 owner_thread_id: ThreadId::invalid(),
                 shared_lock: Mutex::new(()),
                 local_lock: RefCell::new(()),
+                waker: RawEventFd::invalid(),
+                waker_buffer: 0,
                 need_init: AtomicBool::new(false),
             }),
         }
@@ -213,6 +218,7 @@ impl URing {
         // https://nick-black.com/dankwiki/index.php/Io_uring
         // https://tchaloupka.github.io/during/during.io_uring.SetupFlags.html
         // https://nick-black.com/dankwiki/index.php/Io_uring
+        let waker = RawEventFd::new(0, false)?;
         let mut ring = unsafe { MaybeUninit::<uring_sys2::io_uring>::zeroed().assume_init() };
         let mut params =
             unsafe { MaybeUninit::<uring_sys2::io_uring_params>::zeroed().assume_init() };
@@ -273,6 +279,8 @@ impl URing {
                     shared_lock: Mutex::new(()),
                     local_lock: RefCell::new(()),
                     owner_thread_id,
+                    waker,
+                    waker_buffer: 0,
                     need_init: AtomicBool::new(true),
                 }),
             })
@@ -291,13 +299,17 @@ impl URing {
     }
     #[inline(never)]
     fn init_slow_path(&self) -> Result<()> {
-        println!("ICI\n");
         let ring =
             &self.inner.ring as *const uring_sys2::io_uring as usize as *mut uring_sys2::io_uring;
         let status = unsafe { uring_sys2::io_uring_enable_rings(ring) };
         if status >= 0 {
+            let fd = self.inner.waker.as_raw_fd();
+            let buffer = &self.inner.waker_buffer as *const u64 as usize;
+            self.submit_batch(|mut sqes| {
+                sqes.next()?.prep_read(fd, buffer as _, 8, 0, WAKER_TOKEN);
+                Ok(sqes)
+            })?;
             self.inner.need_init.store(false, Ordering::Relaxed);
-            println!("OK\n");
             Ok(())
         } else {
             Err(Error::from_raw_os_error(-status))
@@ -334,6 +346,11 @@ impl URing {
         F: FnOnce(SubmissionQueue) -> Result<SubmissionQueue> + Sync,
     {
         self.ensure_locked(|ring| f(SubmissionQueue::new(ring))?.commit())
+    }
+
+    #[inline(always)]
+    pub fn wake(&self) -> Result<()> {
+        self.inner.waker.write(1)
     }
 }
 
@@ -693,3 +710,5 @@ const OP_FACE: &'static [&'static str] = &[
     "IORING_OP_BIND",
     "IORING_OP_LISTEN",
 ];
+
+const WAKER_TOKEN: usize = 0;

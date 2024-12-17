@@ -9,6 +9,9 @@
 mod event;
 pub use event::*;
 
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+mod eventfd;
+
 cfg_if::cfg_if! {
     if #[cfg(target_os = "linux")] {
         mod epoll;
@@ -26,6 +29,19 @@ pub use stat::*;
 #[inline(always)]
 pub fn last_os_error() -> i32 {
     unsafe { (*errno_location()) as i32 }
+}
+
+fn dup(fd: libc::c_int) -> std::io::Result<libc::c_int> {
+    if fd < 0 {
+        Ok(fd)
+    } else {
+        let fd: i32 = unsafe { libc::dup(fd) };
+        if fd >= 0 {
+            Ok(fd)
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
+    }
 }
 
 extern "C" {

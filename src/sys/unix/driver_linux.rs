@@ -83,18 +83,6 @@ impl Driver {
         let thiz = self.inner.as_ref();
         let fd = unsafe { thiz.waker.get_native_handle() };
         if thiz.ring.is_valid() {
-            let buffer = thiz.waker_buffer.as_ref() as *const EventBuffer as usize;
-            // let mut buffer = ManuallyDrop::new(Box::new(0u64)); buffer.as_mut() as *mut EventBuffer as usize
-            thiz.ring.submit_batch(|mut sqes| {
-                sqes.next()?.prep_read(
-                    fd,
-                    buffer as _,
-                    std::mem::size_of::<EventBuffer>() as _,
-                    0,
-                    WAKER_TOKEN,
-                );
-                Ok(sqes)
-            })?;
             println!("ICI\n");
         } else {
             thiz.epoll
@@ -105,7 +93,8 @@ impl Driver {
         Ok(())
     }
 
+    #[inline(always)]
     pub fn wake(&self) -> Result<()> {
-        self.inner.waker.notify()
+        self.inner.ring.wake()
     }
 }

@@ -1,13 +1,24 @@
 use crate::selector::{Interest, RawSelectorHandle};
+use crate::sys::unix::eventfd::RawEventFd;
 use crate::RawSocketFd;
+use std::os::fd::{FromRawFd, OwnedFd};
 use std::{
     io::{Error, Result},
     os::fd::{AsRawFd, RawFd},
 };
 
+const WAKER_TOKEN: usize = 0;
+
 #[derive(Debug)]
 pub struct EPoll {
     epfd: libc::c_int,
+    waker: RawEventFd,
+}
+
+impl AsRawFd for EPoll {
+    fn as_raw_fd(&self) -> RawFd {
+        self.epfd
+    }
 }
 
 const _: () = assert!(
@@ -23,9 +34,13 @@ const _: () = assert!(
 );
 impl EPoll {
     pub fn invalid() -> Self {
-        Self{epfd: -1}
+        Self {
+            epfd: -1,
+            waker: RawEventFd::invalid(),
+        }
     }
     pub fn new(close_on_exec: bool) -> Result<Self> {
+        let waker = RawEventFd::new(0, false)?;
         let epfd = unsafe {
             libc::epoll_create1(if close_on_exec {
                 libc::EPOLL_CLOEXEC
@@ -34,24 +49,27 @@ impl EPoll {
             })
         };
         if epfd >= 0 {
-            Ok(EPoll {
-                epfd,
-            })
+            let epoll = EPoll { epfd, waker };
+            let eventfd = epoll.waker.as_raw_fd();
+            epoll.epoll_ctl(
+                eventfd,
+                libc::EPOLL_CTL_ADD,
+                (libc::EPOLLIN | libc::EPOLLET | libc::EPOLLEXCLUSIVE) as _,
+                WAKER_TOKEN,
+            )?;
+            Ok(epoll)
         } else {
             Err(std::io::Error::last_os_error())
         }
     }
 
     pub fn try_clone(&self) -> Result<Self> {
-        let epfd = unsafe { libc::dup(self.epfd) };
-        // TODO: is clo exec inherited ???
-        if epfd >= 0 {
-            Ok(EPoll {
-                epfd,
-            })
-        } else {
-            Err(std::io::Error::last_os_error())
-        }
+        // TODO: is clo exec, non-block, ... inherited ???
+        let waker = self.waker.try_clone()?;
+        Ok(Self {
+            epfd: super::dup(self.epfd)?,
+            waker,
+        })
     }
 
     fn epoll_ctl(&self, fd: RawFd, op: libc::c_int, events: u32, token: usize) -> Result<()> {
@@ -65,11 +83,16 @@ impl EPoll {
             Err(Error::last_os_error())
         }
     }
+
+    #[inline(always)]
+    pub fn wake(&self) -> Result<()> {
+        self.waker.write(1)
+    }
 }
 impl Drop for EPoll {
     fn drop(&mut self) {
-        if self.epfd >= 0 {
-            crate::utils::libc_close_log_on_error(self.epfd);
+        if self.epfd > -1 {
+            let _ = unsafe { OwnedFd::from_raw_fd(self.epfd) };
         }
     }
 }
