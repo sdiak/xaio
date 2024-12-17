@@ -8,6 +8,7 @@ use std::{
     sync::Arc,
 };
 
+pub type EventBuffer = u8;
 /// An event can be used as an event wait/notify mechanism by user-space applications, and by the kernel to notify user-space applications of events.
 ///
 /// An event starts not-notified.

@@ -9,19 +9,21 @@
 mod event;
 pub use event::*;
 
-#[cfg(target_os = "linux")]
-mod epoll;
-#[cfg(target_os = "linux")]
-pub use epoll::*;
-
-#[cfg(target_os = "linux")]
-mod driver_linux;
-#[cfg(target_os = "linux")]
-pub use driver_linux::*;
+cfg_if::cfg_if! {
+    if #[cfg(target_os = "linux")] {
+        mod epoll;
+        pub use epoll::*;
+        mod iouring;
+        pub use iouring::*;
+        mod driver_linux;
+        pub use driver_linux::*;
+    }
+}
 
 mod stat;
 pub use stat::*;
 
+#[inline(always)]
 pub fn last_os_error() -> i32 {
     unsafe { (*errno_location()) as i32 }
 }
