@@ -9,7 +9,7 @@ pub fn main() {
     println!("Hello unix");
     println!(
         "sys::current_thread(): {:?}",
-        xaio::sys::get_current_thread_id()
+        xaio::sys::ThreadId::current()
     );
     let config = DriverConfig::default();
     let mut driver = Driver::new(DriverKind::EPoll, &config).unwrap();
@@ -75,33 +75,33 @@ pub fn main() {
     );
     println!(
         "sys::current_thread(): {:?}",
-        xaio::sys::get_current_thread_id()
+        xaio::sys::ThreadId::current()
     );
     let handles = vec![
         std::thread::spawn(|| {
             println!(
                 " - sys::current_thread(): {:?}",
-                xaio::sys::get_current_thread_id()
+                xaio::sys::ThreadId::current()
             );
         }),
         std::thread::spawn(|| {
             println!(
                 " - sys::current_thread(): {:?}",
-                xaio::sys::get_current_thread_id()
+                xaio::sys::ThreadId::current()
             );
         }),
         std::thread::spawn(|| {
             println!(
                 " - sys::current_thread(): {:?}",
-                xaio::sys::get_current_thread_id()
+                xaio::sys::ThreadId::current()
             );
         }),
         std::thread::spawn(|| {
-            let id = xaio::sys::get_current_thread_id();
+            let id = xaio::sys::ThreadId::current();
             println!(
                 " - sys::current_thread(): {:?} ({})",
                 id,
-                id == xaio::sys::get_current_thread_id()
+                id == xaio::sys::ThreadId::current()
             );
         }),
     ];
@@ -131,9 +131,10 @@ pub fn main() {
         std::mem::size_of::<std::pin::Pin<Box<dyn std::future::Future<Output = i64>>>>()
     );
     println!("Probe: {:?}", &*xaio::sys::PROBE);
-    let mut d = xaio::sys::Driver::default().unwrap();
+    let d = xaio::sys::Driver::default().unwrap();
     d.init().unwrap();
     println!("Driver: {:?}", d);
+    d.wake().unwrap();
     println!("Sizeof Sqe: {:?}", std::mem::size_of::<xaio::sys::Sqe>());
     println!(
         "Sizeof Option<NonNull<uring_sys2::io_uring_sqe>>: {:?}",

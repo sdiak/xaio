@@ -1,17 +1,14 @@
+use crate::sys::ThreadId;
 use bitflags::bitflags;
-use std::borrow::Borrow;
-use std::cell::UnsafeCell;
+use std::cell::RefCell;
 use std::fmt::Debug;
 use std::io::{Error, ErrorKind, Result};
-use std::mem::{ManuallyDrop, MaybeUninit};
+use std::mem::MaybeUninit;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{LazyLock, Mutex};
-use std::usize;
+use std::sync::{Arc, LazyLock, Mutex};
 use uring_sys2;
 use uring_sys2::io_uring_op as Op;
-
-use crate::stat;
 
 pub static PROBE: LazyLock<Probe> = LazyLock::new(Probe::new);
 
@@ -160,18 +157,23 @@ pub struct CompletionQueue {
     ring: *mut uring_sys2::io_uring,
 }
 
+#[derive(Debug, Clone)]
 pub struct URing {
+    inner: Arc<Inner>,
+}
+// unsafe impl Send for URing {}
+// unsafe impl Sync for URing {}
+
+struct Inner {
     ring: uring_sys2::io_uring,
-    owner_thread_id: usize, // TODO: create a type
+    owner_thread_id: ThreadId,
     shared_lock: Mutex<()>,
+    local_lock: RefCell<()>,
     features: Feature,
     need_init: AtomicBool,
-    _pin: std::marker::PhantomPinned,
 }
-unsafe impl Send for URing {}
-unsafe impl Sync for URing {}
 
-impl Debug for URing {
+impl Debug for Inner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("URing")
             .field("fd", &self.ring.ring_fd)
@@ -182,7 +184,7 @@ impl Debug for URing {
             .finish()
     }
 }
-impl Drop for URing {
+impl Drop for Inner {
     fn drop(&mut self) {
         if self.ring.ring_fd >= 0 {
             println!("Drop uring({})", self.ring.ring_fd);
@@ -195,12 +197,14 @@ impl URing {
         let mut ring = unsafe { MaybeUninit::<uring_sys2::io_uring>::zeroed().assume_init() };
         ring.ring_fd = -1;
         Self {
-            ring,
-            features: Feature::empty(),
-            owner_thread_id: usize::MAX,
-            shared_lock: Mutex::new(()),
-            need_init: AtomicBool::new(false),
-            _pin: std::marker::PhantomPinned {},
+            inner: Arc::new(Inner {
+                ring,
+                features: Feature::empty(),
+                owner_thread_id: ThreadId::invalid(),
+                shared_lock: Mutex::new(()),
+                local_lock: RefCell::new(()),
+                need_init: AtomicBool::new(false),
+            }),
         }
     }
     pub fn new(config: &mut crate::capi::xconfig_s, probe: &Probe) -> Result<Self> {
@@ -208,12 +212,13 @@ impl URing {
         // https://manpages.debian.org/unstable/liburing-dev/io_uring_setup.2.en.html
         // https://nick-black.com/dankwiki/index.php/Io_uring
         // https://tchaloupka.github.io/during/during.io_uring.SetupFlags.html
+        // https://nick-black.com/dankwiki/index.php/Io_uring
         let mut ring = unsafe { MaybeUninit::<uring_sys2::io_uring>::zeroed().assume_init() };
         let mut params =
             unsafe { MaybeUninit::<uring_sys2::io_uring_params>::zeroed().assume_init() };
         params.sq_entries = config.submission_queue_depth;
         params.cq_entries = config.completion_queue_depth;
-        params.flags = uring_sys2::IORING_SETUP_CQSIZE | uring_sys2::IORING_SETUP_R_DISABLED; // FIXME: R_DISABLED is too new, instead create the ring in init
+        params.flags = uring_sys2::IORING_SETUP_CQSIZE | uring_sys2::IORING_SETUP_R_DISABLED;
         if probe.kernel.ge(5, 6) {
             params.flags |= uring_sys2::IORING_SETUP_CLAMP;
         }
@@ -257,17 +262,19 @@ impl URing {
             config.completion_queue_depth = ring.cq.ring_entries;
             let owner_thread_id =
                 if (config.flags & crate::capi::XCONFIG_FLAG_ATTACH_SINGLE_ISSUER) != 0 {
-                    crate::sys::get_current_thread_id()
+                    ThreadId::current()
                 } else {
-                    usize::MAX
+                    ThreadId::invalid()
                 };
             Ok(Self {
-                ring,
-                features: Feature::from_bits_retain(params.features),
-                shared_lock: Mutex::new(()),
-                owner_thread_id,
-                need_init: AtomicBool::new(true),
-                _pin: std::marker::PhantomPinned {},
+                inner: Arc::new(Inner {
+                    ring,
+                    features: Feature::from_bits_retain(params.features),
+                    shared_lock: Mutex::new(()),
+                    local_lock: RefCell::new(()),
+                    owner_thread_id,
+                    need_init: AtomicBool::new(true),
+                }),
             })
         } else {
             Err(Error::from_raw_os_error(-status))
@@ -276,7 +283,7 @@ impl URing {
 
     #[inline(always)]
     fn init(&self) -> Result<()> {
-        if self.need_init.load(Ordering::Relaxed) {
+        if self.inner.need_init.load(Ordering::Relaxed) {
             self.init_slow_path()
         } else {
             Ok(())
@@ -285,10 +292,11 @@ impl URing {
     #[inline(never)]
     fn init_slow_path(&self) -> Result<()> {
         println!("ICI\n");
-        let ring = &self.ring as *const uring_sys2::io_uring as usize as *mut uring_sys2::io_uring;
+        let ring =
+            &self.inner.ring as *const uring_sys2::io_uring as usize as *mut uring_sys2::io_uring;
         let status = unsafe { uring_sys2::io_uring_enable_rings(ring) };
         if status >= 0 {
-            self.need_init.store(false, Ordering::Relaxed);
+            self.inner.need_init.store(false, Ordering::Relaxed);
             println!("OK\n");
             Ok(())
         } else {
@@ -296,25 +304,36 @@ impl URing {
         }
     }
 
+    #[inline(always)]
     pub fn is_valid(&self) -> bool {
-        self.ring.ring_fd >= 0
+        self.inner.ring.ring_fd >= 0
     }
 
+    #[inline(always)]
+    fn ensure_locked<F, T>(&self, f: F) -> Result<T>
+    where
+        F: FnOnce(*mut uring_sys2::io_uring) -> Result<T>,
+    {
+        self.init()?;
+        // Safety :  rules rust rules are met by
+        //  - shared: Mutex::lock
+        //  - thread-local: RefCell::borrow_mut
+        let ring =
+            &self.inner.ring as *const uring_sys2::io_uring as usize as *mut uring_sys2::io_uring;
+        if self.inner.owner_thread_id.is_invalid() {
+            let _ring_lock = self.inner.shared_lock.lock();
+            f(ring)
+        } else {
+            let _ring_lock = self.inner.local_lock.borrow_mut();
+            f(ring)
+        }
+    }
+    #[inline(always)]
     pub fn submit_batch<F>(&self, f: F) -> Result<u32>
     where
         F: FnOnce(SubmissionQueue) -> Result<SubmissionQueue> + Sync,
     {
-        self.init()?;
-        let ring = &self.ring as *const uring_sys2::io_uring as usize as *mut uring_sys2::io_uring;
-        if self.owner_thread_id == usize::MAX {
-            let _ring_lock = self.shared_lock.lock();
-            let sq = f(SubmissionQueue::new(ring))?;
-            sq.commit()
-        } else {
-            // let ring = unsafe { *self.sqes.local.get() };
-            let sq = f(SubmissionQueue::new(ring))?;
-            sq.commit()
-        }
+        self.ensure_locked(|ring| f(SubmissionQueue::new(ring))?.commit())
     }
 }
 

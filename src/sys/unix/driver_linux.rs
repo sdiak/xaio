@@ -5,7 +5,6 @@ use crate::selector::SelectorImpl;
 use num;
 use std::fmt::Debug;
 use std::io::Result;
-use std::mem::ManuallyDrop;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 
