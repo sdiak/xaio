@@ -3,6 +3,7 @@ pub enum EventCallBack {
     Rust(Box<dyn FnMut()>),
     C(extern "C" fn(*mut libc::c_void), *mut libc::c_void),
 }
+pub const WAKER_TOKEN: usize = usize::MAX;
 
 impl std::fmt::Debug for EventCallBack {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

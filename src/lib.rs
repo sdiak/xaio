@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 mod buffer;
-mod capi;
+pub mod capi;
 mod details;
 mod driver;
 mod driver_none;

@@ -1,3 +1,4 @@
+use crate::sys::WAKER_TOKEN;
 use crate::sys::{unix::eventfd::RawEventFd, ThreadId};
 use bitflags::bitflags;
 use std::cell::RefCell;
@@ -180,6 +181,8 @@ impl Debug for Inner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("URing")
             .field("fd", &self.ring.ring_fd)
+            .field("submission_queue_depth", &self.ring.sq.ring_entries)
+            .field("completion_queue_depth", &self.ring.cq.ring_entries)
             .field("flags", &SetupFlag::from_bits_retain(self.ring.flags))
             .field("features", &self.features)
             .field("need_init", &self.need_init)
@@ -306,7 +309,7 @@ impl URing {
             let fd = self.inner.waker.as_raw_fd();
             let buffer = &self.inner.waker_buffer as *const u64 as usize;
             self.submit_batch(|mut sqes| {
-                sqes.next()?.prep_read(fd, buffer as _, 8, 0, WAKER_TOKEN);
+                sqes.next()?.prep_read(fd, buffer as _, 8, 0, WAKER_TOKEN)?;
                 Ok(sqes)
             })?;
             self.inner.need_init.store(false, Ordering::Relaxed);
@@ -397,9 +400,9 @@ impl Submission {
         nbytes: u32,
         offset: u64,
         token: usize,
-    ) {
+    ) -> Result<()> {
         self.prep_rw(Op::IORING_OP_READ, fd, buf, nbytes, offset);
-        self.set_token(token);
+        self.set_token(token)
     }
 
     #[inline(always)]
@@ -407,8 +410,13 @@ impl Submission {
         unsafe { self.0.as_ref() }.user_data as _
     }
     #[inline(always)]
-    pub fn set_token(&mut self, token: usize) {
-        unsafe { self.0.as_mut() }.user_data = token as _;
+    pub fn set_token(&mut self, token: usize) -> Result<()> {
+        if token != WAKER_TOKEN {
+            unsafe { self.0.as_mut() }.user_data = token as _;
+            Ok(())
+        } else {
+            Err(Error::from(ErrorKind::InvalidInput))
+        }
     }
 
     #[inline(always)]
@@ -436,6 +444,7 @@ impl Sqe {
         sqe.__bindgen_anon_4.buf_index = 0;
         sqe.personality = 0;
         sqe.__bindgen_anon_5.file_index = 0;
+        sqe.user_data = 0; // otherwize, we could see WAKEN_TOKEN when the user does not set use_data !
         unsafe {
             sqe.__bindgen_anon_6.__bindgen_anon_1.as_mut().addr3 = 0;
             sqe.__bindgen_anon_6.__bindgen_anon_1.as_mut().__pad2[0] = 0;
@@ -710,5 +719,3 @@ const OP_FACE: &'static [&'static str] = &[
     "IORING_OP_BIND",
     "IORING_OP_LISTEN",
 ];
-
-const WAKER_TOKEN: usize = 0;

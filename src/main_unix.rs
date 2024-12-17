@@ -131,7 +131,10 @@ pub fn main() {
         std::mem::size_of::<std::pin::Pin<Box<dyn std::future::Future<Output = i64>>>>()
     );
     println!("Probe: {:?}", &*xaio::sys::PROBE);
-    let d = xaio::sys::Driver::default().unwrap();
+    let mut cnf = xaio::capi::xconfig_s::default();
+    cnf.submission_queue_depth = 64;
+    cnf.completion_queue_depth = 1024;
+    let d = xaio::sys::Driver::new(&cnf).unwrap();
     d.init().unwrap();
     println!("Driver: {:?}", d);
     d.wake().unwrap();

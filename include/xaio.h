@@ -52,6 +52,8 @@
  */
 #define XCONFIG_FLAG_FAST_POLL (1u << 3)
 
+
+
 struct xring_s;
 
 /**

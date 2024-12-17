@@ -1,13 +1,13 @@
 use crate::selector::{Interest, RawSelectorHandle};
 use crate::sys::unix::eventfd::RawEventFd;
+use crate::sys::WAKER_TOKEN;
 use crate::RawSocketFd;
+use std::io::ErrorKind;
 use std::os::fd::{FromRawFd, OwnedFd};
 use std::{
     io::{Error, Result},
     os::fd::{AsRawFd, RawFd},
 };
-
-const WAKER_TOKEN: usize = 0;
 
 #[derive(Debug)]
 pub struct EPoll {
@@ -73,6 +73,9 @@ impl EPoll {
     }
 
     fn epoll_ctl(&self, fd: RawFd, op: libc::c_int, events: u32, token: usize) -> Result<()> {
+        if token == WAKER_TOKEN && fd != self.waker.as_raw_fd() {
+            return Err(Error::from(ErrorKind::InvalidInput));
+        }
         let mut event = libc::epoll_event {
             events: events & !Interest::ONESHOT.bits(),
             u64: token as u64,
@@ -134,6 +137,7 @@ impl crate::selector::SelectorImpl for EPoll {
             )
         } >= 0
         {
+            events.retain(|e| e.token != WAKER_TOKEN as _);
             Ok(0)
         } else {
             Err(Error::last_os_error())
