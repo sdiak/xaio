@@ -23,6 +23,44 @@ impl RequestQueue {
         &self.waker
     }
 
+    /// Adds a chain completed request to the given concurrent queue.
+    ///
+    /// # Arguments
+    ///   - `head` The head of the chain
+    ///   - `tail` The tail of the chain
+    /// # Returns
+    ///   - `true` when the self was empty before the bush
+    pub(crate) unsafe fn push_bulk(&self, head: *mut Request, tail: *mut Request) -> bool {
+        assert!(
+            !head.is_null()
+                && !tail.is_null()
+                && (*head).in_a_list()
+                && (*tail).in_a_list()
+                && (*head).status.load(Ordering::Relaxed) != request::PENDING
+                && (*tail).status.load(Ordering::Relaxed) != request::PENDING
+        );
+        let mut old_tail = self.tail.load(Ordering::Acquire);
+        loop {
+            (*tail).list_update_next(old_tail as _, Ordering::Relaxed);
+            match self.tail.compare_exchange_weak(
+                old_tail,
+                head as usize,
+                Ordering::Release,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => {
+                    if old_tail == 0 {
+                        self.waker.notify().expect("Unrecoverable error");
+                        return true;
+                    }
+                    return false;
+                }
+                Err(t) => {
+                    old_tail = t;
+                }
+            }
+        }
+    }
     /// Adds a new completed request to the given concurrent queue.
     ///
     /// # Arguments

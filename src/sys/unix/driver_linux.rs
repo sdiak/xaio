@@ -5,16 +5,26 @@ use crate::selector::SelectorImpl;
 use num;
 use std::fmt::Debug;
 use std::io::Result;
+use std::mem::ManuallyDrop;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 
 const WAKER_TOKEN: usize = 0;
 
 #[derive(Debug)]
 pub struct Driver {
+    inner: Box<Inner>,
+}
+
+#[derive(Debug)]
+struct Inner {
     ring: URing,
     epoll: EPoll,                   // -1 when polling using ring
     waker: Event,                   // TODO: register
     waker_buffer: Box<EventBuffer>, // TODO: pipe is only 1 byte
     config: crate::capi::xconfig_s,
+    need_init: AtomicBool,
+    _pin: std::marker::PhantomPinned,
 }
 
 impl Driver {
@@ -44,39 +54,59 @@ impl Driver {
         } else {
             epoll = EPoll::new((config.flags & crate::capi::XCONFIG_FLAG_CLOSE_ON_EXEC) != 0)?;
         }
-        (Self {
-            ring,
-            epoll,
-            waker,
-            waker_buffer,
-            config,
+        Ok(Self {
+            inner: Box::new(Inner {
+                ring,
+                epoll,
+                waker,
+                waker_buffer,
+                config,
+                need_init: AtomicBool::new(true),
+                _pin: std::marker::PhantomPinned {},
+            }),
         })
-        .register_waker()
     }
     pub fn default() -> Result<Self> {
         Self::new(&xconfig_s::default())
     }
 
-    // pub fn wake(&)
-    fn register_waker(mut self) -> Result<Self> {
-        if self.ring.is_valid() {
-            self.ring.add_sqe(|mut sqe| {
-                sqe.prep_read(
-                    unsafe { self.waker.get_native_handle() },
-                    self.waker_buffer.as_mut() as *mut EventBuffer as _,
+    #[inline(always)]
+    pub fn init(&self) -> Result<()> {
+        // FIXME: remove pub
+        if self.inner.need_init.load(Ordering::Relaxed) {
+            self.init_slow_path()
+        } else {
+            Ok(())
+        }
+    }
+    #[inline(never)]
+    fn init_slow_path(&self) -> Result<()> {
+        let thiz = self.inner.as_ref();
+        let fd = unsafe { thiz.waker.get_native_handle() };
+        if thiz.ring.is_valid() {
+            let buffer = thiz.waker_buffer.as_ref() as *const EventBuffer as usize;
+            // let mut buffer = ManuallyDrop::new(Box::new(0u64)); buffer.as_mut() as *mut EventBuffer as usize
+            thiz.ring.submit_batch(|mut sqes| {
+                sqes.next()?.prep_read(
+                    fd,
+                    buffer as _,
                     std::mem::size_of::<EventBuffer>() as _,
                     0,
                     WAKER_TOKEN,
                 );
-                Ok(())
+                Ok(sqes)
             })?;
+            println!("ICI\n");
         } else {
-            self.epoll.register(
-                crate::RawSocketFd::new(unsafe { self.waker.get_native_handle() }),
-                WAKER_TOKEN,
-                Interest::READABLE,
-            )?;
+            thiz.epoll
+                .register(crate::RawSocketFd::new(fd), WAKER_TOKEN, Interest::READABLE)?;
         }
-        Ok(self)
+        thiz.need_init.store(false, Ordering::Relaxed);
+        println!("LA\n");
+        Ok(())
+    }
+
+    pub fn wake(&self) -> Result<()> {
+        self.inner.waker.notify()
     }
 }

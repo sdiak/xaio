@@ -1,17 +1,23 @@
 use bitflags::bitflags;
+use std::borrow::Borrow;
+use std::cell::UnsafeCell;
 use std::fmt::Debug;
 use std::io::{Error, ErrorKind, Result};
-use std::mem::MaybeUninit;
+use std::mem::{ManuallyDrop, MaybeUninit};
 use std::ptr::NonNull;
-use std::sync::LazyLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{LazyLock, Mutex};
+use std::usize;
 use uring_sys2;
 use uring_sys2::io_uring_op as Op;
+
+use crate::stat;
 
 pub static PROBE: LazyLock<Probe> = LazyLock::new(Probe::new);
 
 bitflags! {
     #[derive(Debug)]
-    pub struct Features: u32 {
+    pub struct Feature: u32 {
         const SINGLE_MMAP = uring_sys2::IORING_FEAT_SINGLE_MMAP;
         const NODROP = uring_sys2::IORING_FEAT_NODROP;
         const SUBMIT_STABLE = uring_sys2::IORING_FEAT_SUBMIT_STABLE;
@@ -33,7 +39,19 @@ bitflags! {
 
 bitflags! {
     #[derive(Debug)]
-    pub struct SetupFlags: u32 {
+    pub struct SubmissionFlag: u8 {
+        const FIXED_FILE = 1u8 << uring_sys2::io_uring_sqe_flags_bit_IOSQE_FIXED_FILE_BIT;
+        const IO_DRAIN = 1u8 << uring_sys2::io_uring_sqe_flags_bit_IOSQE_IO_DRAIN_BIT;
+        const IO_LINK = 1u8 << uring_sys2::io_uring_sqe_flags_bit_IOSQE_IO_LINK_BIT;
+        const IO_HARDLINK = 1u8 << uring_sys2::io_uring_sqe_flags_bit_IOSQE_IO_HARDLINK_BIT;
+        const ASYNC = 1u8 << uring_sys2::io_uring_sqe_flags_bit_IOSQE_ASYNC_BIT;
+        const BUFFER_SELECT = 1u8 << uring_sys2::io_uring_sqe_flags_bit_IOSQE_BUFFER_SELECT_BIT;
+        const CQE_SKIP_SUCCESS = 1u8 << uring_sys2::io_uring_sqe_flags_bit_IOSQE_CQE_SKIP_SUCCESS_BIT;
+    }
+}
+bitflags! {
+    #[derive(Debug)]
+    pub struct SetupFlag: u32 {
         /// io_context is polled
         const IOPOLL = uring_sys2::IORING_SETUP_IOPOLL;
         /// SQ poll thread
@@ -81,16 +99,86 @@ bitflags! {
     }
 }
 
+pub struct SubmissionQueue {
+    ring: *mut uring_sys2::io_uring,
+    tail: u32,
+}
+
+impl SubmissionQueue {
+    #[inline(always)]
+    fn new(ring: *mut uring_sys2::io_uring) -> Self {
+        Self {
+            ring,
+            tail: (unsafe { *ring }).sq.sqe_tail,
+        }
+    }
+
+    #[inline(always)]
+    pub fn next(&mut self) -> Result<Submission> {
+        let r = unsafe { &mut *self.ring };
+        let next: libc::c_uint = self.tail.wrapping_add(1);
+        let shift: u32 = ((r.flags & uring_sys2::IORING_SETUP_SQE128) != 0) as _;
+        let khead = unsafe {
+            &mut *std::mem::transmute::<*mut u32, *mut std::sync::atomic::AtomicU32>(r.sq.khead)
+        };
+        let head = khead.load(if (r.flags & uring_sys2::IORING_SETUP_SQPOLL) == 0 {
+            Ordering::Relaxed
+        } else {
+            Ordering::Acquire
+        });
+        if next.wrapping_sub(head) <= r.sq.ring_entries {
+            let sqe = unsafe {
+                r.sq.sqes
+                    .offset((self.tail & r.sq.ring_mask).wrapping_shl(shift) as _)
+            };
+            self.tail = next;
+            Ok(Submission::new(sqe))
+        } else {
+            Err(Error::from(ErrorKind::WouldBlock))
+        }
+    }
+
+    fn commit(self) -> Result<u32> {
+        let r = unsafe { &mut *self.ring };
+        let old_tail = r.sq.sqe_tail;
+        if self.tail != old_tail {
+            r.sq.sqe_tail = self.tail;
+            let status = unsafe { uring_sys2::io_uring_submit(self.ring) };
+            if status >= 0 {
+                Ok(status as u32)
+            } else {
+                // Rollback tail commit
+                r.sq.sqe_tail = old_tail;
+                Err(Error::from_raw_os_error(-status))
+            }
+        } else {
+            Ok(0)
+        }
+    }
+}
+pub struct CompletionQueue {
+    ring: *mut uring_sys2::io_uring,
+}
+
 pub struct URing {
     ring: uring_sys2::io_uring,
-    features: Features,
+    owner_thread_id: usize, // TODO: create a type
+    shared_lock: Mutex<()>,
+    features: Feature,
+    need_init: AtomicBool,
+    _pin: std::marker::PhantomPinned,
 }
+unsafe impl Send for URing {}
+unsafe impl Sync for URing {}
+
 impl Debug for URing {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("URing")
             .field("fd", &self.ring.ring_fd)
-            .field("flags", &SetupFlags::from_bits_retain(self.ring.flags))
+            .field("flags", &SetupFlag::from_bits_retain(self.ring.flags))
             .field("features", &self.features)
+            .field("need_init", &self.need_init)
+            .field("owner_thread_id", &self.owner_thread_id)
             .finish()
     }
 }
@@ -108,11 +196,12 @@ impl URing {
         ring.ring_fd = -1;
         Self {
             ring,
-            features: Features::empty(),
+            features: Feature::empty(),
+            owner_thread_id: usize::MAX,
+            shared_lock: Mutex::new(()),
+            need_init: AtomicBool::new(false),
+            _pin: std::marker::PhantomPinned {},
         }
-    }
-    pub fn is_valid(&self) -> bool {
-        self.ring.ring_fd >= 0
     }
     pub fn new(config: &mut crate::capi::xconfig_s, probe: &Probe) -> Result<Self> {
         // TODO:  SINGLE ISSUER TASKRUN, ...
@@ -124,7 +213,7 @@ impl URing {
             unsafe { MaybeUninit::<uring_sys2::io_uring_params>::zeroed().assume_init() };
         params.sq_entries = config.submission_queue_depth;
         params.cq_entries = config.completion_queue_depth;
-        params.flags = uring_sys2::IORING_SETUP_CQSIZE;
+        params.flags = uring_sys2::IORING_SETUP_CQSIZE | uring_sys2::IORING_SETUP_R_DISABLED; // FIXME: R_DISABLED is too new, instead create the ring in init
         if probe.kernel.ge(5, 6) {
             params.flags |= uring_sys2::IORING_SETUP_CLAMP;
         }
@@ -166,88 +255,65 @@ impl URing {
         if status >= 0 {
             config.submission_queue_depth = ring.sq.ring_entries;
             config.completion_queue_depth = ring.cq.ring_entries;
+            let owner_thread_id =
+                if (config.flags & crate::capi::XCONFIG_FLAG_ATTACH_SINGLE_ISSUER) != 0 {
+                    crate::sys::get_current_thread_id()
+                } else {
+                    usize::MAX
+                };
             Ok(Self {
                 ring,
-                features: Features::from_bits_retain(params.features),
+                features: Feature::from_bits_retain(params.features),
+                shared_lock: Mutex::new(()),
+                owner_thread_id,
+                need_init: AtomicBool::new(true),
+                _pin: std::marker::PhantomPinned {},
             })
         } else {
             Err(Error::from_raw_os_error(-status))
         }
     }
 
-    #[cfg(feature = "iouring-native-sqe")]
-    #[inline]
-    pub fn get_sqe(&mut self) -> Option<NonNull<uring_sys2::io_uring_sqe>> {
-        let sq = &mut self.ring.sq;
-        let next: libc::c_uint = sq.sqe_tail.wrapping_add(1);
-        let shift: u32 = ((self.ring.flags & uring_sys2::IORING_SETUP_SQE128) != 0) as _;
-        let head = if (self.ring.flags & uring_sys2::IORING_SETUP_SQPOLL) == 0 {
-            unsafe { *sq.khead }
+    #[inline(always)]
+    fn init(&self) -> Result<()> {
+        if self.need_init.load(Ordering::Relaxed) {
+            self.init_slow_path()
         } else {
-            let khead = unsafe {
-                &mut *std::mem::transmute::<*mut u32, *mut std::sync::atomic::AtomicU32>(sq.khead)
-            };
-            khead.load(std::sync::atomic::Ordering::Acquire)
-        };
-        if next.wrapping_sub(head) <= sq.ring_entries {
-            let sqe = unsafe {
-                sq.sqes
-                    .offset((sq.sqe_tail & sq.ring_mask).wrapping_shl(shift) as _)
-            };
-            sq.sqe_tail = next;
-            Some(Sqe(sqe).initialize())
-        } else {
-            None
+            Ok(())
         }
     }
-
-    #[cfg(not(feature = "iouring-native-sqe"))]
-    #[inline(always)]
-    pub fn get_sqe(&mut self) -> Option<NonNull<uring_sys2::io_uring_sqe>> {
-        NonNull::new(unsafe { uring_sys2::io_uring_get_sqe(&mut self.ring as _) })
-    }
-
-    pub fn submit(&mut self) -> Result<()> {
-        let status = unsafe { uring_sys2::io_uring_submit(&mut self.ring) };
+    #[inline(never)]
+    fn init_slow_path(&self) -> Result<()> {
+        println!("ICI\n");
+        let ring = &self.ring as *const uring_sys2::io_uring as usize as *mut uring_sys2::io_uring;
+        let status = unsafe { uring_sys2::io_uring_enable_rings(ring) };
         if status >= 0 {
+            self.need_init.store(false, Ordering::Relaxed);
+            println!("OK\n");
             Ok(())
         } else {
             Err(Error::from_raw_os_error(-status))
         }
     }
 
-    #[inline]
-    pub fn add_sqe<F>(&mut self, f: F) -> Result<i32>
+    pub fn is_valid(&self) -> bool {
+        self.ring.ring_fd >= 0
+    }
+
+    pub fn submit_batch<F>(&self, f: F) -> Result<u32>
     where
-        F: FnOnce(Sqe) -> Result<()>,
+        F: FnOnce(SubmissionQueue) -> Result<SubmissionQueue> + Sync,
     {
-        let old_tail = self.ring.sq.sqe_tail;
-        let next: libc::c_uint = old_tail.wrapping_add(1);
-        let shift: u32 = ((self.ring.flags & uring_sys2::IORING_SETUP_SQE128) != 0) as _;
-        let head = if (self.ring.flags & uring_sys2::IORING_SETUP_SQPOLL) == 0 {
-            unsafe { *self.ring.sq.khead }
+        self.init()?;
+        let ring = &self.ring as *const uring_sys2::io_uring as usize as *mut uring_sys2::io_uring;
+        if self.owner_thread_id == usize::MAX {
+            let _ring_lock = self.shared_lock.lock();
+            let sq = f(SubmissionQueue::new(ring))?;
+            sq.commit()
         } else {
-            let khead = unsafe {
-                &mut *std::mem::transmute::<*mut u32, *mut std::sync::atomic::AtomicU32>(
-                    self.ring.sq.khead,
-                )
-            };
-            khead.load(std::sync::atomic::Ordering::Acquire)
-        };
-        if next.wrapping_sub(head) <= self.ring.sq.ring_entries {
-            let sqe = unsafe {
-                self.ring.sq.sqes.offset(
-                    (self.ring.sq.sqe_tail & self.ring.sq.ring_mask).wrapping_shl(shift) as _,
-                )
-            };
-            let sqe = Sqe(sqe);
-            sqe.initialize();
-            f(sqe)?;
-            self.submit()?;
-            self.ring.sq.sqe_tail = next;
-            Ok(1)
-        } else {
-            Err(Error::from(ErrorKind::StorageFull))
+            // let ring = unsafe { *self.sqes.local.get() };
+            let sq = f(SubmissionQueue::new(ring))?;
+            sq.commit()
         }
     }
 }
@@ -256,11 +322,96 @@ impl URing {
 #[derive(Copy, Clone)]
 pub struct Sqe(*mut uring_sys2::io_uring_sqe);
 
+#[repr(transparent)]
+#[derive(Copy, Clone)]
+pub struct Submission(NonNull<uring_sys2::io_uring_sqe>);
+
+impl Submission {
+    #[inline]
+    fn new(sqe: *mut uring_sys2::io_uring_sqe) -> Self {
+        let sqe = unsafe { &mut *sqe };
+        sqe.flags = 0;
+        sqe.ioprio = 0;
+        sqe.__bindgen_anon_3.rw_flags = 0;
+        sqe.__bindgen_anon_4.buf_index = 0;
+        sqe.personality = 0;
+        sqe.__bindgen_anon_5.file_index = 0;
+        unsafe {
+            sqe.__bindgen_anon_6.__bindgen_anon_1.as_mut().addr3 = 0;
+            sqe.__bindgen_anon_6.__bindgen_anon_1.as_mut().__pad2[0] = 0;
+            Self(NonNull::new_unchecked(sqe as *mut uring_sys2::io_uring_sqe))
+        }
+    }
+
+    #[inline]
+    fn prep_rw(&mut self, op: Op, fd: libc::c_int, addr: *mut libc::c_void, len: u32, offset: u64) {
+        let sqe = unsafe { self.0.as_mut() };
+        sqe.opcode = op as _;
+        sqe.fd = fd;
+        sqe.__bindgen_anon_1.off = offset;
+        sqe.__bindgen_anon_2.addr = addr as usize as _;
+        sqe.len = len;
+    }
+
+    #[inline(always)]
+    pub fn prep_read(
+        &mut self,
+        fd: libc::c_int,
+        buf: *mut libc::c_void,
+        nbytes: u32,
+        offset: u64,
+        token: usize,
+    ) {
+        self.prep_rw(Op::IORING_OP_READ, fd, buf, nbytes, offset);
+        self.set_token(token);
+    }
+
+    #[inline(always)]
+    pub fn token(&self) -> usize {
+        unsafe { self.0.as_ref() }.user_data as _
+    }
+    #[inline(always)]
+    pub fn set_token(&mut self, token: usize) {
+        unsafe { self.0.as_mut() }.user_data = token as _;
+    }
+
+    #[inline(always)]
+    pub fn flags(&self) -> SubmissionFlag {
+        SubmissionFlag::from_bits_retain(unsafe { self.0.as_ref() }.flags)
+    }
+    #[inline(always)]
+    pub fn set_flags(&mut self, flags: SubmissionFlag) {
+        unsafe { self.0.as_mut() }.flags = flags.bits();
+    }
+}
+
 impl Sqe {
+    #[cfg(feature = "iouring-native-sqe")]
+    #[inline]
+    fn new(sqe: *mut uring_sys2::io_uring_sqe, linked: bool) -> Self {
+        let sqe = unsafe { &mut *sqe };
+        sqe.flags = if linked {
+            uring_sys2::io_uring_sqe_flags_bit_IOSQE_IO_LINK_BIT as _
+        } else {
+            0
+        };
+        sqe.ioprio = 0;
+        sqe.__bindgen_anon_3.rw_flags = 0;
+        sqe.__bindgen_anon_4.buf_index = 0;
+        sqe.personality = 0;
+        sqe.__bindgen_anon_5.file_index = 0;
+        unsafe {
+            sqe.__bindgen_anon_6.__bindgen_anon_1.as_mut().addr3 = 0;
+            sqe.__bindgen_anon_6.__bindgen_anon_1.as_mut().__pad2[0] = 0;
+        }
+        Self(sqe as *mut uring_sys2::io_uring_sqe)
+    }
+
     #[cfg(feature = "iouring-native-sqe")]
     #[inline]
     fn initialize(self) -> NonNull<uring_sys2::io_uring_sqe> {
         let sqe = unsafe { &mut *self.0 };
+        sqe.opcode = Op::IORING_OP_NOP as _;
         sqe.flags = 0;
         sqe.ioprio = 0;
         sqe.__bindgen_anon_3.rw_flags = 0;
@@ -278,6 +429,10 @@ impl Sqe {
     #[inline]
     fn prep_rw(&mut self, op: Op, fd: libc::c_int, addr: *mut libc::c_void, len: u32, offset: u64) {
         let sqe = unsafe { &mut *self.0 };
+        assert!(
+            sqe.opcode == Op::IORING_OP_NOP as _,
+            "Can only prep No-op submission"
+        );
         sqe.opcode = op as _;
         sqe.fd = fd;
         sqe.__bindgen_anon_1.off = offset;
@@ -382,8 +537,8 @@ impl KernelVersion {
         self.major > major || (self.major == major && self.minor >= minor)
     }
     fn has_io_uring(&self) -> bool {
-        // Do not try before Linux 5.1
-        self.ge(5, 1)
+        // Do not try before Linux 5.5 (IORING_FEAT_SUBMIT_STABLE & IORING_FEAT_NODROP)
+        self.ge(5, 5)
     }
     fn has_registered_buffers(&self) -> bool {
         self.ge(5, 19)

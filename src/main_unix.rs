@@ -131,11 +131,17 @@ pub fn main() {
         std::mem::size_of::<std::pin::Pin<Box<dyn std::future::Future<Output = i64>>>>()
     );
     println!("Probe: {:?}", &*xaio::sys::PROBE);
-    println!("Driver: {:?}", xaio::sys::Driver::default());
+    let mut d = xaio::sys::Driver::default().unwrap();
+    d.init().unwrap();
+    println!("Driver: {:?}", d);
     println!("Sizeof Sqe: {:?}", std::mem::size_of::<xaio::sys::Sqe>());
     println!(
         "Sizeof Option<NonNull<uring_sys2::io_uring_sqe>>: {:?}",
         std::mem::size_of::<Option<std::ptr::NonNull<uring_sys2::io_uring_sqe>>>()
+    );
+    println!(
+        "Sizeof Option<xaio::sys::Submission>: {:?}",
+        std::mem::size_of::<Option<xaio::sys::Submission>>()
     );
     // println!("-4096isize as usize: {}", -4096isize as usize);
     // println!("{}", 18446744073709547521usize as isize);
