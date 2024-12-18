@@ -34,7 +34,7 @@ enum TestLayout2 {
     },
 }
 
-use xaio::scheduler::Scheduler;
+use xaio::scheduler;
 
 struct Yield(bool);
 impl std::future::Future for Yield {
@@ -75,7 +75,7 @@ pub fn main() {
         std::mem::align_of::<TestLayout2>()
     );
 
-    let r = Scheduler::block_on(task0());
+    let r = scheduler::block_on(task0());
     println!("task0() : {:?}", r);
     return;
     println!("Hello unix");

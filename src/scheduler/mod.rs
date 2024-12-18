@@ -103,47 +103,25 @@ impl ThreadWaker {
 }
 
 pub struct Scheduler(Arc<SchedulerInner>);
-impl Scheduler {
-    fn foreign_block_on<F: Future>(mut task: Pin<&mut F>) -> Result<F::Output> {
-        // TODO: create a forein task and set CURRENT_TASK
-        let cnd = ThreadWaker::new()?;
-        let waker = cnd.as_waker();
-        let mut cx = Context::from_waker(&waker);
-        loop {
-            match task.as_mut().poll(&mut cx) {
-                std::task::Poll::Ready(o) => {
-                    return Ok(o);
-                }
-                std::task::Poll::Pending => {
-                    std::thread::park();
-                }
+impl Scheduler {}
+
+pub fn block_on<F: Future>(task: F) -> Result<F::Output> {
+    pin_mut!(task);
+    // TODO: create a forein task and set CURRENT_TASK
+    let cnd = ThreadWaker::new()?;
+    let waker = cnd.as_waker();
+    let mut cx = Context::from_waker(&waker);
+    loop {
+        match task.as_mut().poll(&mut cx) {
+            std::task::Poll::Ready(o) => {
+                return Ok(o);
+            }
+            std::task::Poll::Pending => {
+                std::thread::park();
             }
         }
     }
-    // pub fn spawn(task: impl Future<Output = O> + Send + 'static) -> Result<O>
-    // where
-    //     O: Send,
-    // let future = unsafe { SharedFuture::new_unchecked(Box::new(task)) };
-    // // let thread_self = std::thread::current();
-    // let mut task = Task { future };
-    pub fn block_on<F: Future>(task: F) -> Result<F::Output> {
-        pin_mut!(task);
-        let curr = CURRENT_TASK
-            .try_with(|v| *v)
-            .map_err(|_| Error::from(ErrorKind::PermissionDenied))?;
-        if let Some(_current) = curr {
-            todo!()
-        } else {
-            Scheduler::foreign_block_on(task)
-        }
-    }
-    // pub fn spawn_local<O>(task: impl Future<Output = O> + 'static) -> Result<O> {
-    //     let future = unsafe { LocalFuture::new_unchecked(Box::new(task)) };
-    //     let task = Task { future };
-    //     Err(std::io::Error::from_raw_os_error(libc::ENOSYS))
-    // }
 }
-
 // impl Deref for Scheduler {
 //     type Target = Shared;
 //     fn deref(&self) -> &Self::Target {
