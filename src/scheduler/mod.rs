@@ -4,14 +4,16 @@ use std::{
     io::Result,
     ops::{Deref, DerefMut},
     pin::Pin,
-    sync::{atomic::AtomicBool, Arc, Condvar, Mutex, MutexGuard}, task::{Context, RawWaker, RawWakerVTable, Waker}, thread::Thread,
+    sync::{atomic::AtomicBool, Arc, Condvar, Mutex, MutexGuard},
+    task::{Context, RawWaker, RawWakerVTable, Waker},
+    thread::Thread,
 };
 
 pub type LocalFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
 pub type SharedFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 struct Task<'a, T> {
-    future:  SharedFuture<'a, T>,
+    future: SharedFuture<'a, T>,
 }
 pub struct Executor {
     should_run: AtomicBool,
@@ -32,18 +34,20 @@ const NOOP: RawWaker = {
     RawWaker::new(std::ptr::null(), &VTABLE)
 };
 
-struct CondWaker {
-    inner: Arc<Thread>
+struct ThreadWaker {
+    inner: Arc<Thread>, // TODO: Thread::{into_raw, from_raw} https://github.com/rust-lang/rust/issues/97523
 }
-impl CondWaker {
-    pub fn new() -> Result<CondWaker> {
-        crate::catch_enomem(|| CondWaker{ inner: Arc::new(std::thread::current())})
+impl ThreadWaker {
+    pub fn new() -> Result<ThreadWaker> {
+        crate::catch_enomem(|| ThreadWaker {
+            inner: Arc::new(std::thread::current()),
+        })
     }
     pub fn as_waker(&self) -> Waker {
         let arc = self.inner.clone();
         let raw_ptr = Arc::into_raw(arc) as *const ();
         println!("CondWaker::as_waker({:?})", raw_ptr);
-        let raw = RawWaker::new(raw_ptr, &CondWaker::VTABLE);;
+        let raw = RawWaker::new(raw_ptr, &ThreadWaker::VTABLE);
         unsafe { Waker::from_raw(raw) }
     }
     fn clone(raw_ptr: *const ()) -> RawWaker {
@@ -51,12 +55,12 @@ impl CondWaker {
         let arc = unsafe { Arc::from_raw(raw_ptr as *const Thread) };
         std::mem::forget(arc.clone());
         std::mem::forget(arc);
-        RawWaker::new(raw_ptr, &CondWaker::VTABLE)
+        RawWaker::new(raw_ptr, &ThreadWaker::VTABLE)
     }
     fn wake(raw_ptr: *const ()) {
         println!("CondWaker::wake({:?})", raw_ptr);
-        CondWaker::wake_by_ref(raw_ptr);
-        CondWaker::drop(raw_ptr);
+        ThreadWaker::wake_by_ref(raw_ptr);
+        ThreadWaker::drop(raw_ptr);
     }
     fn wake_by_ref(raw_ptr: *const ()) {
         println!("CondWaker::wake_by_ref({:?})", raw_ptr);
@@ -76,12 +80,12 @@ impl CondWaker {
         println!("CondWaker::drop({:?})", raw_ptr);
         let _ = unsafe { Arc::from_raw(raw_ptr as *const Thread) };
     }
-    
+
     const VTABLE: RawWakerVTable = RawWakerVTable::new(
-        CondWaker::clone,
-        CondWaker::wake,
-        CondWaker::wake_by_ref,
-        CondWaker::drop,
+        ThreadWaker::clone,
+        ThreadWaker::wake,
+        ThreadWaker::wake_by_ref,
+        ThreadWaker::drop,
     );
 }
 
@@ -95,15 +99,17 @@ impl Scheduler {
         // let thread_self = std::thread::current();
         let mut task = Task { future };
         // let waker = unsafe { Waker::from_raw(NOOP) };
-        let cnd = CondWaker::new()?;
+        let cnd = ThreadWaker::new()?;
         let waker = cnd.as_waker();
         let mut cx = Context::from_waker(&waker);
         loop {
             match task.future.as_mut().poll(&mut cx) {
-                std::task::Poll::Ready(o) => {return Ok(o);}
+                std::task::Poll::Ready(o) => {
+                    return Ok(o);
+                }
                 std::task::Poll::Pending => {
                     std::thread::park();
-                },
+                }
             }
         }
     }
