@@ -1,20 +1,33 @@
 use std::{
     cell::UnsafeCell,
     future::Future,
-    io::Result,
-    ops::{Deref, DerefMut},
+    io::{Error, ErrorKind, Result},
     pin::Pin,
-    sync::{atomic::AtomicBool, Arc, Condvar, Mutex, MutexGuard},
+    ptr::NonNull,
+    sync::{atomic::AtomicBool, Arc},
     task::{Context, RawWaker, RawWakerVTable, Waker},
     thread::Thread,
 };
 
+macro_rules! pin_mut {
+    ($var:ident) => {
+        let mut $var = $var;
+        #[allow(unused_mut)]
+        let mut $var = unsafe { Pin::new_unchecked(&mut $var) };
+    };
+}
+
+thread_local! {
+    static CURRENT_TASK: Option<NonNull<Task>> = const { None };
+}
+
 pub type LocalFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
 pub type SharedFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-struct Task<'a, T> {
-    future: SharedFuture<'a, T>,
-}
+struct Task {}
+// struct Task<'a, T> {
+//     future: SharedFuture<'a, T>,
+// }
 pub struct Executor {
     should_run: AtomicBool,
 }
@@ -46,38 +59,38 @@ impl ThreadWaker {
     pub fn as_waker(&self) -> Waker {
         let arc = self.inner.clone();
         let raw_ptr = Arc::into_raw(arc) as *const ();
-        println!("CondWaker::as_waker({:?})", raw_ptr);
+        println!("ThreadWaker::as_waker({:?})", raw_ptr);
         let raw = RawWaker::new(raw_ptr, &ThreadWaker::VTABLE);
         unsafe { Waker::from_raw(raw) }
     }
     fn clone(raw_ptr: *const ()) -> RawWaker {
-        println!("CondWaker::clone({:?})", raw_ptr);
+        println!("ThreadWaker::clone({:?})", raw_ptr);
         let arc = unsafe { Arc::from_raw(raw_ptr as *const Thread) };
         std::mem::forget(arc.clone());
         std::mem::forget(arc);
         RawWaker::new(raw_ptr, &ThreadWaker::VTABLE)
     }
     fn wake(raw_ptr: *const ()) {
-        println!("CondWaker::wake({:?})", raw_ptr);
+        println!("ThreadWaker::wake({:?})", raw_ptr);
         ThreadWaker::wake_by_ref(raw_ptr);
         ThreadWaker::drop(raw_ptr);
     }
     fn wake_by_ref(raw_ptr: *const ()) {
-        println!("CondWaker::wake_by_ref({:?})", raw_ptr);
+        println!("ThreadWaker::wake_by_ref({:?})", raw_ptr);
         let arc = unsafe { Arc::from_raw(raw_ptr as *const Thread) };
         arc.unpark();
         // let mut lock = arc.0.lock().expect("Unrecoverable error");
-        // println!("CondWaker::wake_by_ref({:?}): lock: {:?}", raw_ptr, *lock);
+        // println!("ThreadWaker::wake_by_ref({:?}): lock: {:?}", raw_ptr, *lock);
         // if *lock {
         //     *lock = false;
         //     arc.1.notify_one();
-        //     println!("CondWaker::wake_by_ref({:?}): signaled", raw_ptr);
+        //     println!("ThreadWaker::wake_by_ref({:?}): signaled", raw_ptr);
         // }
         // drop(lock);
         std::mem::forget(arc);
     }
     fn drop(raw_ptr: *const ()) {
-        println!("CondWaker::drop({:?})", raw_ptr);
+        println!("ThreadWaker::drop({:?})", raw_ptr);
         let _ = unsafe { Arc::from_raw(raw_ptr as *const Thread) };
     }
 
@@ -91,19 +104,13 @@ impl ThreadWaker {
 
 pub struct Scheduler(Arc<SchedulerInner>);
 impl Scheduler {
-    pub fn run<O>(task: impl Future<Output = O> + Send + 'static) -> Result<O>
-    where
-        O: Send,
-    {
-        let future = unsafe { SharedFuture::new_unchecked(Box::new(task)) };
-        // let thread_self = std::thread::current();
-        let mut task = Task { future };
-        // let waker = unsafe { Waker::from_raw(NOOP) };
+    fn foreign_block_on<F: Future>(mut task: Pin<&mut F>) -> Result<F::Output> {
+        // TODO: create a forein task and set CURRENT_TASK
         let cnd = ThreadWaker::new()?;
         let waker = cnd.as_waker();
         let mut cx = Context::from_waker(&waker);
         loop {
-            match task.future.as_mut().poll(&mut cx) {
+            match task.as_mut().poll(&mut cx) {
                 std::task::Poll::Ready(o) => {
                     return Ok(o);
                 }
@@ -111,6 +118,23 @@ impl Scheduler {
                     std::thread::park();
                 }
             }
+        }
+    }
+    // pub fn spawn(task: impl Future<Output = O> + Send + 'static) -> Result<O>
+    // where
+    //     O: Send,
+    // let future = unsafe { SharedFuture::new_unchecked(Box::new(task)) };
+    // // let thread_self = std::thread::current();
+    // let mut task = Task { future };
+    pub fn block_on<F: Future>(task: F) -> Result<F::Output> {
+        pin_mut!(task);
+        let curr = CURRENT_TASK
+            .try_with(|v| *v)
+            .map_err(|_| Error::from(ErrorKind::PermissionDenied))?;
+        if let Some(_current) = curr {
+            todo!()
+        } else {
+            Scheduler::foreign_block_on(task)
         }
     }
     // pub fn spawn_local<O>(task: impl Future<Output = O> + 'static) -> Result<O> {

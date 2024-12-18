@@ -7,13 +7,31 @@ extern "C" fn io_work_callback(req: &mut Request) {
 
 #[repr(u8)]
 enum TestLayout {
-    OpNoOp { f1: u8, f2: u16, f3: u32, },
-    OpDeadline { f1: u8, f2: u16, f3: u32, deadline: u64 },
+    OpNoOp {
+        f1: u8,
+        f2: u16,
+        f3: u32,
+    },
+    OpDeadline {
+        f1: u8,
+        f2: u16,
+        f3: u32,
+        deadline: u64,
+    },
 }
 #[repr(C, u8)]
 enum TestLayout2 {
-    OpNoOp { f1: u8, f2: u16, f3: u32, },
-    OpDeadline { f1: u8, f2: u16, f3: u32, deadline: u64 },
+    OpNoOp {
+        f1: u8,
+        f2: u16,
+        f3: u32,
+    },
+    OpDeadline {
+        f1: u8,
+        f2: u16,
+        f3: u32,
+        deadline: u64,
+    },
 }
 
 use xaio::scheduler::Scheduler;
@@ -21,10 +39,12 @@ use xaio::scheduler::Scheduler;
 struct Yield(bool);
 impl std::future::Future for Yield {
     type Output = ();
-    fn poll(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
         if self.0 {
             self.0 = false;
-            std::thread::sleep(std::time::Duration::from_millis(1000));
             cx.waker().wake_by_ref();
             std::task::Poll::Pending
         } else {
@@ -32,6 +52,7 @@ impl std::future::Future for Yield {
         }
     }
 }
+
 pub async fn ayield() {
     Yield(true).await
 }
@@ -43,10 +64,18 @@ async fn task0() -> i32 {
     42
 }
 pub fn main() {
-    println!("TestLayout1 => size: {}, align: {}", std::mem::size_of::<TestLayout>(), std::mem::align_of::<TestLayout>());
-    println!("TestLayout2 => size: {}, align: {}", std::mem::size_of::<TestLayout2>(), std::mem::align_of::<TestLayout2>());
+    println!(
+        "TestLayout1 => size: {}, align: {}",
+        std::mem::size_of::<TestLayout>(),
+        std::mem::align_of::<TestLayout>()
+    );
+    println!(
+        "TestLayout2 => size: {}, align: {}",
+        std::mem::size_of::<TestLayout2>(),
+        std::mem::align_of::<TestLayout2>()
+    );
 
-    let r = Scheduler::run(task0());
+    let r = Scheduler::block_on(task0());
     println!("task0() : {:?}", r);
     return;
     println!("Hello unix");

@@ -4,7 +4,6 @@ use crate::{
 };
 use num::Zero;
 use rustc_hash::{FxBuildHasher, FxHashMap};
-use std::borrow::Borrow;
 use std::cell::UnsafeCell;
 use std::io::Error;
 use std::panic::UnwindSafe;
@@ -61,12 +60,10 @@ impl xring_s {
     }
     fn run(group: RingGroup, index_in_group: usize) {
         let builder = std::thread::Builder::new();
-        let thiz = unsafe { (&(*group.0.get() ).rings[index_in_group] as *const xring_s) as usize};
+        let thiz = unsafe { (&(*group.0.get()).rings[index_in_group] as *const xring_s) as usize };
         let _ = builder.spawn(move || {
             let thiz = thiz as *mut xring_s;
-            loop {
-
-            };
+            loop {}
         });
     }
 }
@@ -108,7 +105,7 @@ impl RingGroup {
 
                 // builder.spawn(|| { })
             }
-            
+
             // inner
             //     .rings
             //     .push(xring_s::new(RingGroup(group), concurrency - 1)?);
