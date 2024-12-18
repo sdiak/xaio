@@ -108,8 +108,7 @@ impl Scheduler {}
 pub fn block_on<F: Future>(task: F) -> Result<F::Output> {
     pin_mut!(task);
     // TODO: create a forein task and set CURRENT_TASK
-    let cnd = ThreadWaker::new()?;
-    let waker = cnd.as_waker();
+    let waker = ThreadWaker::new()?.as_waker();
     let mut cx = Context::from_waker(&waker);
     loop {
         match task.as_mut().poll(&mut cx) {
