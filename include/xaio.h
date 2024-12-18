@@ -54,6 +54,10 @@
 
 
 
+struct OpDeadlineF;
+
+struct OpNoOp;
+
 struct xring_s;
 
 /**
@@ -77,6 +81,22 @@ struct xcp_s {
  *   -  `<0` on error
  */
 typedef int32_t (*xwork_cb)(void *work_arg);
+
+typedef int32_t (*xfuture_poll_cb)(struct xfuture_s *_Nonnull thiz);
+
+struct xtask_waker_s {
+  const void *data;
+  const void *vtable;
+};
+
+struct xcontext_s {
+  struct xtask_waker_s waker;
+};
+
+struct xfuture_s {
+  xfuture_poll_cb poll;
+  struct xcontext_s cx;
+};
 
 /**
  * IO Driver parameters
@@ -211,6 +231,30 @@ struct xdriver_s {
   struct xdriver_params_s params;
 };
 
+enum TestLayout_Tag
+#ifdef __cplusplus
+  : uint8_t
+#endif // __cplusplus
+ {
+  OpNoOp,
+  OpDeadline,
+};
+#ifndef __cplusplus
+typedef uint8_t TestLayout_Tag;
+#endif // __cplusplus
+
+union TestLayout {
+  TestLayout_Tag tag;
+  struct {
+    TestLayout_Tag op_no_op_tag;
+    struct OpNoOp op_no_op;
+  };
+  struct {
+    TestLayout_Tag op_deadline_tag;
+    struct OpDeadlineF op_deadline;
+  };
+};
+
 /**
  * IO Driver parameters
  */
@@ -292,6 +336,8 @@ int32_t xio_work(struct xring_s *ring, uint64_t token, xwork_cb work_cb, void *w
 
 int32_t xsend(struct xring_s *ring, uint64_t token, xsocket_t socket);
 
+int32_t xfuture_s(struct xfuture_s *_Nonnull f);
+
 void xdriver_params_default(struct xdriver_params_s *_Nonnull params);
 
 const struct xdriver_class_s *_Nonnull xdriver_class_default(void);
@@ -313,6 +359,8 @@ __attribute__((warn_unused_result))
 int32_t xdriver_new(struct xdriver_s **pdriver,
                     const struct xdriver_class_s *opt_clazz,
                     const struct xdriver_params_s *opt_params);
+
+uint8_t get_f1(const union TestLayout *_Nonnull _tl);
 
 /**
  * Creates a new ring.

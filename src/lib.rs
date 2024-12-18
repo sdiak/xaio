@@ -26,6 +26,9 @@ pub use request_list::*;
 pub use ring::*;
 pub use socket::RawSocketFd;
 
+pub mod scheduler;
+
+
 pub mod sys;
 
 pub use socket::*;

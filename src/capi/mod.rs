@@ -3,7 +3,7 @@
 #![allow(non_snake_case)]
 #![allow(unused)]
 
-use std::ptr::NonNull;
+use std::{mem::ManuallyDrop, ptr::NonNull};
 
 #[cfg(not(target_os = "windows"))]
 use libc::c_int as xsocket_t;
@@ -15,6 +15,8 @@ mod driver;
 
 pub mod ring;
 pub use ring::*;
+
+use crate::stat;
 
 #[cfg_attr(target_os = "linux", path = "driver_epoll_linux.rs")]
 #[cfg_attr(not(target_os = "linux"), path = "driver_epoll_unsupported.rs")]
@@ -108,4 +110,43 @@ pub unsafe extern "C" fn xio_work(
 #[no_mangle]
 pub unsafe extern "C" fn xsend(ring: *mut xring_s, token: u64, socket: xsocket_t) -> i32 {
     -libc::ENOSYS
+}
+
+
+pub const WAKER_SIZE: usize = std::mem::size_of::<std::task::Waker>();
+
+#[repr(C)]
+pub struct xtask_waker_s {
+    data: *const libc::c_void,
+    vtable: *const libc::c_void,
+}
+#[repr(C)]
+pub struct xcontext_s {
+    waker: xtask_waker_s
+}
+
+pub type xfuture_poll_cb = unsafe extern "C" fn(thiz: &mut xfuture_s) -> i32;
+#[repr(C)]
+pub struct xfuture_s {
+    poll: xfuture_poll_cb,
+    cx: xcontext_s,
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn xfuture_s(f: &mut xfuture_s) -> i32 {
+    (f.poll)(f)
+}
+
+impl std::future::Future for xfuture_s {
+    type Output = i32;
+    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+        let thiz = unsafe { self.get_unchecked_mut() };
+        unsafe { std::mem::transmute::<&mut xtask_waker_s, &mut std::task::Waker>(&mut thiz.cx.waker).clone_from(cx.waker()) };
+        let status = unsafe { (thiz.poll)(thiz) };
+        if status == i32::MIN {
+            std::task::Poll::Pending
+        } else {
+            std::task::Poll::Ready(status)
+        }
+    }
 }

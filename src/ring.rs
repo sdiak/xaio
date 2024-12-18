@@ -1,13 +1,17 @@
 use crate::{
-    request, sys, thread_pool, OpCode, Status, FLAG_INITIALIZED, FLAG_RING_OWNED, PENDING,
+    catch_enomem, request, sys, thread_pool, OpCode, Status, FLAG_INITIALIZED, FLAG_RING_OWNED,
+    PENDING,
 };
+use num::Zero;
 use rustc_hash::{FxBuildHasher, FxHashMap};
+use std::borrow::Borrow;
+use std::cell::UnsafeCell;
 use std::io::Error;
 use std::panic::UnwindSafe;
 use std::ptr::NonNull;
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 use std::{cell::RefCell, sync::atomic::AtomicU32, time::Instant};
 
 use crate::{
@@ -18,7 +22,106 @@ use std::io::{ErrorKind, Result};
 
 use crate::details::TimerHeap;
 
+// use crate::capi::xring_s;
+
 static EPOCH: LazyLock<Instant> = LazyLock::new(Instant::now);
+
+// #[repr(transparent)]
+// pub struct Ring2(crate::capi::xring_s);
+
+// impl RingGroupEntry {
+//     fn start<C>(mut concurrency: usize, ring_constructor: C) -> Result<()>
+//     where C: FnOnce() -> Result<()>
+//     {
+//     }
+// }
+#[allow(non_camel_case_types)]
+pub struct xring_s {
+    // TODO: for uring-like: keep track of unsubmited and commit them before exaustion
+    group: RingGroup,
+    index_in_group: usize,
+    join_handle: Option<std::thread::JoinHandle<()>>,
+}
+impl xring_s {
+    fn new(group: RingGroup, index_in_group: usize) -> Result<xring_s> {
+        Ok(Self {
+            group,
+            index_in_group,
+            join_handle: None,
+        })
+    }
+    fn start<M>(&self, ring_main: M)
+    where
+        M: FnOnce(&xring_s) -> () + Copy + Send + 'static,
+    {
+        // let builder = std::thread::Builder::new();
+        // // TODO: builder
+        // let _ = builder.spawn(move ||
+        ring_main(self);
+    }
+    fn run(group: RingGroup, index_in_group: usize) {
+        let builder = std::thread::Builder::new();
+        let thiz = unsafe { (&(*group.0.get() ).rings[index_in_group] as *const xring_s) as usize};
+        let _ = builder.spawn(move || {
+            let thiz = thiz as *mut xring_s;
+            loop {
+
+            };
+        });
+    }
+}
+struct RingGroupInner {
+    id: usize,
+    rings: Vec<xring_s>,
+}
+unsafe impl Send for xring_s {}
+unsafe impl Sync for xring_s {}
+unsafe impl Send for RingGroup {}
+unsafe impl Sync for RingGroup {}
+
+#[derive(Clone)]
+pub struct RingGroup(Arc<UnsafeCell<RingGroupInner>>);
+
+impl RingGroup {
+    pub fn start<M>(mut concurrency: usize, ring_main: M) -> Result<()>
+    where
+        M: FnOnce(&xring_s) -> () + Copy + Send + 'static,
+    {
+        if concurrency.is_zero() {
+            concurrency = num_cpus::get();
+        }
+        let group = catch_enomem(|| {
+            Arc::<UnsafeCell<RingGroupInner>>::new(UnsafeCell::new(RingGroupInner {
+                id: 0, // TODO:
+                rings: Vec::<xring_s>::with_capacity(concurrency),
+            }))
+        })?;
+        {
+            let inner = unsafe { &mut *(&*group).get() };
+            for index in 0..(concurrency - 1) {
+                inner
+                    .rings
+                    .push(xring_s::new(RingGroup(group.clone()), index)?);
+                xring_s::run(RingGroup(group.clone()), index);
+                // inner.rings[index].run();
+                // let builder = std::thread::Builder::new();
+
+                // builder.spawn(|| { })
+            }
+            
+            // inner
+            //     .rings
+            //     .push(xring_s::new(RingGroup(group), concurrency - 1)?);
+            // for index in 0..concurrency {
+            //     let builder = std::thread::Builder::new();
+            //     // TODO: builder
+
+            //     let _ = builder.spawn(move || inner.rings[index].run() );
+            // }
+        }
+        Ok(())
+    }
+}
 
 pub(crate) struct RingInner {
     rc: u32,
@@ -40,10 +143,11 @@ pub struct Ring {
 }
 impl Drop for Ring {
     fn drop(&mut self) {
-        let inner = self.inner.borrow();
-        if inner.rc > 1 || inner.arc.load(std::sync::atomic::Ordering::Relaxed) != 0 {
-            log::warn!("Need to cancel everything and wait"); // TODO:
-        }
+        todo!()
+        // let inner = self.inner.borrow();
+        // if inner.rc > 1 || inner.arc.load(std::sync::atomic::Ordering::Relaxed) != 0 {
+        //     log::warn!("Need to cancel everything and wait"); // TODO:
+        // }
     }
 }
 

@@ -2,6 +2,60 @@ use std::usize;
 
 pub struct xring_s {
     // TODO: for uring-like: keep track of unsubmited and commit them before exaustion
+    group_inner: *const libc::c_void,
+    index_in_group: usize,
+    join_handle: std::thread::JoinHandle<()>,
+}
+
+pub struct xring_group_s {
+
+}
+
+// #[repr(C)]
+// pub struct xreq_s {
+//     #[cfg(target_family = "windows")]
+//     _win_header: windows_sys::Win32::System::IO::OVERLAPPED,
+//     #[cfg(target_family = "unix")]
+//     _unix_header: usize, // ??1 : pinned to this ring, ??0 : pinned to this scheduler
+    
+//     pub(crate) status: std::sync::atomic::AtomicI32,
+//     pub(crate) flags_and_op_code: u32,
+// };
+
+#[repr(C, packed)]
+pub struct OpNoOp {}
+#[repr(C, packed)]
+pub struct OpDeadlineF {
+    // f1: u8, f2: u16, f3: u32, deadline: u64,
+    deadline: u64,
+}
+#[repr(u8)]
+pub enum TestLayout {
+    OpNoOp(OpNoOp),
+    OpDeadline(OpDeadlineF),
+}
+pub struct xreq_t {
+    #[cfg(target_family = "windows")]
+    _win_header: windows_sys::Win32::System::IO::OVERLAPPED,
+    #[cfg(target_family = "unix")]
+    _unix_header: usize,
+    list_next: std::sync::atomic::AtomicUsize,
+    status: std::sync::atomic::AtomicI32,
+    flags: u16,
+    _reverved8: u8,
+    op: TestLayout
+}
+const _: () = assert!(std::mem::size_of::<xreq_t>() == 32);
+
+#[no_mangle]
+pub unsafe extern "C" fn get_f1(_tl: &TestLayout) -> u8 {
+    0
+    // match tl {
+    //     TestLayout::OpNoOp(op) => op.f1,
+    //     TestLayout::OpDeadline(op) => op.f1,
+    //     // TestLayout::OpDeadline(&v) 
+    //     // OpNoOp(&op) => op.f1,
+    // }
 }
 
 /// Tries to reuse the sharable driver handle in `xdriver_params_s::attach_handle
