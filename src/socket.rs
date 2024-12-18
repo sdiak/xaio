@@ -51,7 +51,7 @@ pub fn socketpair(
     typ: socket2::Type,
     protocol: Option<socket2::Protocol>,
 ) -> Result<(socket2::Socket, socket2::Socket)> {
-    use std::io::{ErrorKind, Result};
+    use std::io::{Error, ErrorKind};
 
     /* TODO: try UNIX
     https://devblogs.microsoft.com/commandline/af_unix-comes-to-windows/
