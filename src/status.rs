@@ -1,6 +1,7 @@
 use crate::request;
 use std::io::{Error, ErrorKind};
 
+// https://github.com/rust-lang/rust/issues/84277
 const OTHER: i32 = libc::EIO as _;
 
 #[repr(C)]
