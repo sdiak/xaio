@@ -2,5 +2,16 @@
 name = "xaio-core"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.83.0"
 
 [dependencies]
+libc = { workspace = true }
+log = { workspace = true }
+bitflags = { workspace = true }
+num = { workspace = true }
+rustc-hash = { workspace = true }
+socket2 = {  workspace = true, features = ["all"]}
+cfg-if = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+uring-sys2 = "0.10.0"
