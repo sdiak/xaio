@@ -31,12 +31,14 @@ unsafe impl Sync for Task {}
 ///   -  `i32::MIN` when the future is still pending
 pub type xfuture_poll_cb =
     unsafe extern "C" fn(thiz: &mut xfuture_s, cx: &mut Context<'static>) -> i32;
+pub type xfuture_drop_cb = unsafe extern "C" fn(thiz: &mut xfuture_s);
 
 #[repr(C)]
 pub struct xfuture_s {
     size: u32,
     align: u32,
     poll: xfuture_poll_cb,
+    drop: xfuture_drop_cb,
 }
 
 #[repr(transparent)]
@@ -46,8 +48,9 @@ pub struct BoxedFuture {
 impl Drop for BoxedFuture {
     fn drop(&mut self) {
         let inner = unsafe { self.inner.as_mut() };
-        // TODO: drop callback
         unsafe {
+            // TODO: drop can only release Done futures
+            (inner.drop)(inner);
             std::alloc::dealloc(
                 self.inner.as_ptr() as _,
                 Layout::from_size_align_unchecked(inner.size as _, inner.align as _),
@@ -62,7 +65,7 @@ struct BoxedShared<F: Future + Send + 'static> {
     f: F,
 }
 impl<F: Future + Send + 'static> BoxedShared<F> {
-    unsafe extern "C" fn trampoline(thiz: &mut xfuture_s, cx: &mut Context<'static>) -> i32 {
+    unsafe extern "C" fn poll_trampoline(thiz: &mut xfuture_s, cx: &mut Context<'static>) -> i32 {
         let thiz = &mut *(thiz as *mut xfuture_s as *mut libc::c_void as *mut BoxedShared<F>);
         let f = Pin::new_unchecked(&mut thiz.f);
         if let Poll::Ready(result) = f.poll(cx) {
@@ -72,6 +75,9 @@ impl<F: Future + Send + 'static> BoxedShared<F> {
             i32::MIN
         }
     }
+    unsafe extern "C" fn drop_trampoline(thiz: &mut xfuture_s) {
+        let _ = *(thiz as *mut xfuture_s as *mut libc::c_void as *mut BoxedShared<F>);
+    }
     pub fn boxed(f: F) -> Option<BoxedFuture> {
         let layout = std::alloc::Layout::new::<BoxedShared<F>>();
         let ptr = unsafe { std::alloc::alloc(layout) } as *mut BoxedShared<F>;
@@ -79,7 +85,7 @@ impl<F: Future + Send + 'static> BoxedShared<F> {
             let mem = unsafe { &mut *ptr };
             mem.as_future.size = layout.size() as _;
             mem.as_future.align = layout.align() as _;
-            mem.as_future.poll = BoxedShared::<F>::trampoline;
+            mem.as_future.poll = BoxedShared::<F>::poll_trampoline;
             mem.result = None;
             unsafe {
                 std::ptr::write::<F>(&mut mem.f as *mut F, f);
