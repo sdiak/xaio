@@ -9,7 +9,7 @@ use std::{
 };
 
 pub(super) struct Task {
-    future: BoxedFuture, // TODO: drop can only release Done futures
+    future: BoxedFuture,
     /// The receiver `Executor` address (ored with `1usize` when pinned to it)
     completion_queue: usize,
 }
@@ -36,6 +36,7 @@ pub type xfuture_drop_cb = unsafe extern "C" fn(thiz: &mut xfuture_s);
 
 #[repr(C)]
 pub struct xfuture_s {
+    flags: u32,
     size: u32,
     align: u32,
     status: AtomicI32,
@@ -52,14 +53,14 @@ impl Drop for BoxedFuture {
         let inner = unsafe { self.inner.as_mut() };
         if inner.status.swap(-libc::ECANCELED, Ordering::Acquire) != i32::MIN {
             // We can drop the inner memory
-            unsafe { (inner.drop)(inner) };
-        } // Otherwize the driver will do the drop
-        unsafe {
-            std::alloc::dealloc(
-                self.inner.as_ptr() as _,
-                Layout::from_size_align_unchecked(inner.size as _, inner.align as _),
-            )
-        };
+            unsafe {
+                (inner.drop)(inner);
+                std::alloc::dealloc(
+                    self.inner.as_ptr() as _,
+                    Layout::from_size_align_unchecked(inner.size as _, inner.align as _),
+                )
+            };
+        } // Otherwize the loop will do the drop TODO:
     }
 }
 
