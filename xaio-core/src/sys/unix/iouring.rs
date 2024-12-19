@@ -427,7 +427,6 @@ impl Submission {
 }
 
 impl Sqe {
-    #[cfg(feature = "iouring-native-sqe")]
     #[inline]
     fn new(sqe: *mut uring_sys2::io_uring_sqe, linked: bool) -> Self {
         let sqe = unsafe { &mut *sqe };
@@ -449,7 +448,6 @@ impl Sqe {
         Self(sqe as *mut uring_sys2::io_uring_sqe)
     }
 
-    #[cfg(feature = "iouring-native-sqe")]
     #[inline]
     fn initialize(self) -> NonNull<uring_sys2::io_uring_sqe> {
         let sqe = unsafe { &mut *self.0 };
@@ -467,7 +465,6 @@ impl Sqe {
         }
     }
 
-    #[cfg(feature = "iouring-native-sqe")]
     #[inline]
     fn prep_rw(&mut self, op: Op, fd: libc::c_int, addr: *mut libc::c_void, len: u32, offset: u64) {
         let sqe = unsafe { &mut *self.0 };
@@ -491,13 +488,7 @@ impl Sqe {
         offset: u64,
         token: usize,
     ) {
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "iouring-native-sqe")] {
-                self.prep_rw(Op::IORING_OP_READ, fd, buf, nbytes, offset);
-            } else  {
-                unsafe { uring_sys2::io_uring_prep_read(self.0, fd, buf, nbytes, offset) };
-            }
-        }
+        self.prep_rw(Op::IORING_OP_READ, fd, buf, nbytes, offset);
         self.set_token(token);
     }
 

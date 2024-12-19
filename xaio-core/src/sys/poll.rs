@@ -2,7 +2,7 @@ use std::io::{Error, ErrorKind, Result};
 
 cfg_if::cfg_if! {
     if #[cfg(target_family = "unix")] {
-        use libc::{POLLERR, POLLHUP, POLLIN, POLLOUT, POLLPRI, SOCKET_ERROR};
+        use libc::{POLLERR, POLLHUP, POLLIN, POLLOUT, POLLPRI};
         type RawPollFd = libc::pollfd;
     } else if #[cfg(target_family = "windows")] {
         use windows_sys::Win32::Networking::WinSock::{WSAPoll, WSAPOLLFD};

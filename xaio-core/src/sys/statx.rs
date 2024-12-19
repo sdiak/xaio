@@ -1,36 +1,30 @@
+cfg_if::cfg_if! {
+    if #[cfg(target_os = "linux")] {
+        pub use libc::{STATX_TYPE, STATX_MODE, STATX_NLINK, STATX_UID, STATX_GID, STATX_ATIME, STATX_MTIME, STATX_CTIME, STATX_INO, STATX_SIZE, STATX_BLOCKS, STATX_BTIME };
+    } else {
+        const STATX_TYPE: libc::c_uint = 1u32 << 0;
+        const STATX_MODE: libc::c_uint = 1u32 << 1;
+        const STATX_NLINK: libc::c_uint = 1u32 << 2;
+        const STATX_UID: libc::c_uint = 1u32 << 3;
+        const STATX_GID: libc::c_uint = 1u32 << 4;
+        const STATX_ATIME: libc::c_uint = 1u32 << 5;
+        const STATX_MTIME: libc::c_uint = 1u32 << 6;
+        const STATX_CTIME: libc::c_uint = 1u32 << 7;
+        const STATX_INO: libc::c_uint = 1u32 << 8;
+        const STATX_SIZE: libc::c_uint = 1u32 << 9;
+        const STATX_BLOCKS: libc::c_uint = 1u32 << 10;
+        const STATX_BTIME: libc::c_uint = 1u32 << 11;
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct StatXTimestamp {
     /// Seconds elapsed since EPOCH
     sec: u64,
-    /// Nanoseconds afer `sec`
-    nsec: u32, /* Nanoseconds since tv_sec */
+    /// Nanoseconds after `sec`
+    nsec: u32,
 }
-
-/// Want file type
-const STATX_TYPE: libc::c_uint = 1u32 << 0;
-/// Want file mode
-const STATX_MODE: libc::c_uint = 1u32 << 1;
-/// Want file nlink
-const STATX_NLINK: libc::c_uint = 1u32 << 2;
-/// Want uid
-const STATX_UID: libc::c_uint = 1u32 << 3;
-/// Want gid
-const STATX_GID: libc::c_uint = 1u32 << 4;
-/// Want atime
-const STATX_ATIME: libc::c_uint = 1u32 << 5;
-/// Want mtime
-const STATX_MTIME: libc::c_uint = 1u32 << 6;
-/// Want ctime
-const STATX_CTIME: libc::c_uint = 1u32 << 7;
-/// Want ino
-const STATX_INO: libc::c_uint = 1u32 << 8;
-/// Want size
-const STATX_SIZE: libc::c_uint = 1u32 << 9;
-/// Want blocks
-const STATX_BLOCKS: libc::c_uint = 1u32 << 10;
-/// Want btime
-const STATX_BTIME: libc::c_uint = 1u32 << 11;
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
