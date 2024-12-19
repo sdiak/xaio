@@ -80,6 +80,7 @@ impl<F: Future + Send + 'static> BoxedShared<F> {
     }
     pub fn boxed(f: F) -> Option<BoxedFuture> {
         let layout = std::alloc::Layout::new::<BoxedShared<F>>();
+        assert!(layout.size() <= u32::MAX as _ && layout.align() <= u32::MAX as _); // TODO: const
         let ptr = unsafe { std::alloc::alloc(layout) } as *mut BoxedShared<F>;
         if !ptr.is_null() {
             let mem = unsafe { &mut *ptr };
