@@ -1,3 +1,5 @@
+use std::io::{Error, ErrorKind};
+
 cfg_if::cfg_if! {
     if #[cfg(target_family = "unix")] {
         mod unix;
@@ -5,13 +7,14 @@ cfg_if::cfg_if! {
     } else if #[cfg(target_family = "windows")] {
         mod windows;
         pub use windows::*;
+        pub use windows::statx::*;
     }
 }
 
 mod poll;
-use std::io::{Error, ErrorKind};
-
 pub use poll::*;
+mod statx;
+pub use statx::StatX;
 
 fn io_error_kind_to_errno_constant(err: ErrorKind) -> libc::c_int {
     // TODO:

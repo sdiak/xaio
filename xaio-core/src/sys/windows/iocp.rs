@@ -412,5 +412,15 @@ mod tests {
             }
             crate::sys::ioutils::close_handle_log_on_error(hfile.0);
         }
+        println!("sz: {}", std::mem::size_of::<crate::sys::StatX>());
+        println!(
+            "offset: {}",
+            std::mem::offset_of!(crate::sys::StatX, mnt_id)
+        );
+        println!(
+            "doSome: {},{}",
+            crate::sys::StatX::do_something(),
+            crate::sys::StatX::do_something_else(),
+        );
     }
 }

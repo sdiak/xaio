@@ -18,6 +18,8 @@ pub mod event;
 
 pub mod iocp;
 
+pub mod statx;
+
 #[derive(Debug, Clone, Copy)]
 struct WindowsLateBinding {
     ntdll: Library,
