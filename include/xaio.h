@@ -52,6 +52,8 @@
  */
 #define XCONFIG_FLAG_FAST_POLL (1u << 3)
 
+#define PENDING_STATUS INT32_MIN
+
 
 
 struct OpDeadlineF;

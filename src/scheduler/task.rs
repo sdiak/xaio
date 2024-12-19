@@ -8,6 +8,7 @@ use std::{
     task::{Context, Poll},
 };
 
+pub const PENDING_STATUS: i32 = i32::MIN;
 pub(super) struct Task {
     future: BoxedFuture,
     /// The receiver `Executor` address (ored with `1usize` when pinned to it)
@@ -28,7 +29,7 @@ unsafe impl Sync for Task {}
 ///   - `work_arg` argument passed to `xring_submit_work`
 ///
 /// # Returns
-///   -  `i32::MIN` when the future is still pending
+///   -  `PENDING_STATUS` when the future is still pending
 pub type xfuture_poll_cb =
     unsafe extern "C" fn(thiz: &mut xfuture_s, cx: &mut Context<'static>) -> i32;
 /// Release resources associated to the given future (**DO NOT** deallocate `thiz`)
@@ -51,7 +52,7 @@ pub struct BoxedFuture {
 impl Drop for BoxedFuture {
     fn drop(&mut self) {
         let inner = unsafe { self.inner.as_mut() };
-        if inner.status.swap(-libc::ECANCELED, Ordering::Acquire) != i32::MIN {
+        if inner.status.swap(-libc::ECANCELED, Ordering::Acquire) != PENDING_STATUS {
             // We can drop the inner memory
             unsafe {
                 (inner.drop)(inner);
@@ -61,6 +62,7 @@ impl Drop for BoxedFuture {
                 )
             };
         } // Otherwize the loop will do the drop TODO:
+          //  - The one calling future_wake should check for status == PENDING perform the clean up
     }
 }
 
@@ -77,7 +79,7 @@ impl<F: Future + Send + 'static> BoxedShared<F> {
             thiz.result = Some(result);
             0
         } else {
-            i32::MIN
+            PENDING_STATUS
         }
     }
     unsafe extern "C" fn drop_trampoline(thiz: &mut xfuture_s) {
@@ -97,7 +99,7 @@ impl<F: Future + Send + 'static> BoxedShared<F> {
                 std::ptr::write::<F>(&mut mem.f as *mut F, f);
                 std::ptr::write::<AtomicI32>(
                     &mut mem.as_future.status as *mut AtomicI32,
-                    AtomicI32::new(i32::MIN),
+                    AtomicI32::new(PENDING_STATUS),
                 );
             };
             Some(BoxedFuture {
