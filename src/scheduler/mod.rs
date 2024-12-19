@@ -13,7 +13,9 @@ use std::{
 };
 
 pub mod executor;
+mod task;
 
+#[macro_export]
 macro_rules! pin_mut {
     ($var:ident) => {
         let mut $var = $var;
@@ -21,6 +23,7 @@ macro_rules! pin_mut {
         let mut $var = unsafe { Pin::new_unchecked(&mut $var) };
     };
 }
+pub use pin_mut;
 
 thread_local! {
     static CURRENT_TASK: Option<NonNull<Task>> = const { None };
