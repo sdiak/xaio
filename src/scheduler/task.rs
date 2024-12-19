@@ -37,10 +37,10 @@ pub type xfuture_drop_cb = unsafe extern "C" fn(thiz: &mut xfuture_s);
 
 #[repr(C)]
 pub struct xfuture_s {
-    flags: u32,
     size: u32,
     align: u32,
-    status: AtomicI32,
+    local_status: i32,
+    remote_status: AtomicI32,
     poll: xfuture_poll_cb,
     drop: xfuture_drop_cb,
 }
@@ -52,8 +52,9 @@ pub struct BoxedFuture {
 impl Drop for BoxedFuture {
     fn drop(&mut self) {
         let inner = unsafe { self.inner.as_mut() };
-        if inner.status.swap(-libc::ECANCELED, Ordering::Acquire) != PENDING_STATUS {
-            // We can drop the inner memory
+        // Only the owning task as the right to write to local_status
+        if inner.local_status != PENDING_STATUS {
+            // We can drop the inner memory we are the sole user
             unsafe {
                 (inner.drop)(inner);
                 std::alloc::dealloc(
@@ -61,8 +62,15 @@ impl Drop for BoxedFuture {
                     Layout::from_size_align_unchecked(inner.size as _, inner.align as _),
                 )
             };
-        } // Otherwize the loop will do the drop TODO:
-          //  - The one calling future_wake should check for status == PENDING perform the clean up
+        } else {
+            // The future is or will be queued to the task executor, signal that we are not interested and that it should be dropped
+            inner.local_status = -libc::ECANCELED;
+            // Notify that work should be cancelled if possible
+            inner
+                .remote_status
+                .store(-libc::ECANCELED, Ordering::Relaxed);
+            //TODO: maybe do a driver cancel (think how to)
+        }
     }
 }
 
@@ -94,11 +102,12 @@ impl<F: Future + Send + 'static> BoxedShared<F> {
             mem.as_future.size = layout.size() as _;
             mem.as_future.align = layout.align() as _;
             mem.as_future.poll = BoxedShared::<F>::poll_trampoline;
+            mem.as_future.local_status = PENDING_STATUS;
             mem.result = None;
             unsafe {
                 std::ptr::write::<F>(&mut mem.f as *mut F, f);
                 std::ptr::write::<AtomicI32>(
-                    &mut mem.as_future.status as *mut AtomicI32,
+                    &mut mem.as_future.remote_status as *mut AtomicI32,
                     AtomicI32::new(PENDING_STATUS),
                 );
             };
