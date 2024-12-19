@@ -102,6 +102,7 @@ impl<F: Future + Send + 'static> BoxedShared<F> {
             mem.as_future.size = layout.size() as _;
             mem.as_future.align = layout.align() as _;
             mem.as_future.poll = BoxedShared::<F>::poll_trampoline;
+            mem.as_future.drop = BoxedShared::<F>::drop_trampoline;
             mem.as_future.local_status = PENDING_STATUS;
             mem.result = None;
             unsafe {
