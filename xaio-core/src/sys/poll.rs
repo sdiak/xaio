@@ -1,16 +1,29 @@
 use std::io::{Error, ErrorKind, Result};
 
+cfg_if::cfg_if! {
+    if #[cfg(target_family = "unix")] {
+        use libc::{POLLERR, POLLHUP, POLLIN, POLLOUT, POLLPRI, SOCKET_ERROR};
+        type RawPollFd = libc::pollfd;
+    } else if #[cfg(target_family = "windows")] {
+        use windows_sys::Win32::Networking::WinSock::{WSAPoll, WSAPOLLFD};
+        use windows_sys::Win32::Networking::WinSock::{
+            POLLERR, POLLHUP, POLLIN, POLLOUT, POLLPRI, SOCKET_ERROR,
+        };
+        type RawPollFd = WSAPOLLFD;
+    }
+}
+
 use super::RawSocket;
 
 #[repr(transparent)]
 #[derive(Clone, Copy)]
-pub struct PollFd(libc::pollfd);
+pub struct PollFd(RawPollFd);
 
 cfg_if::cfg_if! {
     if #[cfg(target_family = "unix")] {
         pub const MAX_POLL_FDS: usize = libc::nfds_t::MAX as _;
     } else if #[cfg(target_family = "windows")] {
-        pub const MAX_POLL_FDS: usize = libc::ulong::MAX as _;
+        pub const MAX_POLL_FDS: usize = libc::c_ulong::MAX as _;
     }
 }
 
@@ -19,24 +32,24 @@ bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Event: i16 {
         /// Readable interests or event.
-        const IN = libc::POLLIN;
+        const IN = POLLIN;
         /// Writable interests or event.
-        const OUT = libc::POLLOUT;
+        const OUT = POLLOUT;
         /// Priority interests or event.
-        const PRI = libc::POLLPRI;
+        const PRI = POLLPRI;
 
         /// Error event.
-        const ERR = libc::POLLERR;
+        const ERR = POLLERR;
         /// Hang-up event (peer closed its end of the channel).
-        const HUP = libc::POLLHUP;
+        const HUP = POLLHUP;
     }
 }
 
 impl PollFd {
     #[inline]
     pub fn new(fd: RawSocket, events: Event) -> Self {
-        Self(libc::pollfd {
-            fd: fd,
+        Self(RawPollFd {
+            fd: fd as _,
             events: events.bits(),
             revents: 0 as _,
         })
@@ -44,7 +57,7 @@ impl PollFd {
 
     #[inline(always)]
     pub fn fd(&self) -> RawSocket {
-        self.0.fd
+        self.0.fd as RawSocket
     }
 
     #[inline(always)]
@@ -64,14 +77,14 @@ impl PollFd {
 
     #[inline(always)]
     pub fn enable(&mut self, fd: RawSocket, interests: Event) {
-        self.0.fd = fd;
+        self.0.fd = fd as _;
         self.0.events = interests.bits();
         self.0.revents = 0;
     }
 
     #[inline(always)]
     pub fn disable(&mut self) {
-        self.0.fd = super::INVALID_RAW_SOCKET;
+        self.0.fd = super::INVALID_RAW_SOCKET as _;
     }
 
     #[inline(always)]
@@ -80,7 +93,7 @@ impl PollFd {
             if #[cfg(target_family = "unix")] {
                 self.0.fd < 0
             } else if #[cfg(target_family = "windows")] {
-                self.0.fd == super::INVALID_RAW_SOCKET
+                self.0.fd == super::INVALID_RAW_SOCKET as _
             }
         }
     }
@@ -89,8 +102,8 @@ impl PollFd {
 impl Default for PollFd {
     #[inline(always)]
     fn default() -> Self {
-        Self(libc::pollfd {
-            fd: super::INVALID_RAW_SOCKET,
+        Self(RawPollFd {
+            fd: super::INVALID_RAW_SOCKET as _,
             events: 0,
             revents: 0,
         })
