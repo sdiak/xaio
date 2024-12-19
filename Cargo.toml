@@ -1,0 +1,8 @@
+[workspace]
+
+members = [
+    "xaio-core",
+    "xaio-future",
+    "playground",
+]
+resolver = "2"
