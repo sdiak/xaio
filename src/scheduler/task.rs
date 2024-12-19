@@ -1,10 +1,10 @@
 use std::{
     alloc::Layout,
     future::Future,
-    io::Result,
-    mem::MaybeUninit,
+    i32,
     pin::Pin,
     ptr::NonNull,
+    sync::atomic::{AtomicI32, Ordering},
     task::{Context, Poll},
 };
 
@@ -31,12 +31,14 @@ unsafe impl Sync for Task {}
 ///   -  `i32::MIN` when the future is still pending
 pub type xfuture_poll_cb =
     unsafe extern "C" fn(thiz: &mut xfuture_s, cx: &mut Context<'static>) -> i32;
+/// Release resources associated to the given future (**DO NOT** deallocate `thiz`)
 pub type xfuture_drop_cb = unsafe extern "C" fn(thiz: &mut xfuture_s);
 
 #[repr(C)]
 pub struct xfuture_s {
     size: u32,
     align: u32,
+    status: AtomicI32,
     poll: xfuture_poll_cb,
     drop: xfuture_drop_cb,
 }
@@ -48,9 +50,11 @@ pub struct BoxedFuture {
 impl Drop for BoxedFuture {
     fn drop(&mut self) {
         let inner = unsafe { self.inner.as_mut() };
+        if inner.status.swap(-libc::ECANCELED, Ordering::Acquire) != i32::MIN {
+            // We can drop the inner memory
+            unsafe { (inner.drop)(inner) };
+        } // Otherwize the driver will do the drop
         unsafe {
-            // TODO: drop can only release Done futures
-            (inner.drop)(inner);
             std::alloc::dealloc(
                 self.inner.as_ptr() as _,
                 Layout::from_size_align_unchecked(inner.size as _, inner.align as _),
@@ -90,6 +94,10 @@ impl<F: Future + Send + 'static> BoxedShared<F> {
             mem.result = None;
             unsafe {
                 std::ptr::write::<F>(&mut mem.f as *mut F, f);
+                std::ptr::write::<AtomicI32>(
+                    &mut mem.as_future.status as *mut AtomicI32,
+                    AtomicI32::new(i32::MIN),
+                );
             };
             Some(BoxedFuture {
                 inner: unsafe { NonNull::new_unchecked(ptr as *mut libc::c_void as _) },
