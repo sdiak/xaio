@@ -3,9 +3,11 @@ use std::fmt::Debug;
 use std::i32;
 use std::io::{Error, ErrorKind, Result};
 use std::mem::MaybeUninit;
+use std::os::windows::io::RawSocket;
 use std::ptr::NonNull;
 use std::sync::{Arc, Mutex};
 use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+use windows_sys::Win32::Networking::WinSock::{self, AcceptEx, WSABUF};
 use windows_sys::Win32::Storage::FileSystem;
 use windows_sys::Win32::Storage::FileSystem::{CreateFileA, ReadFile, WriteFile};
 use windows_sys::Win32::System::IO::{
@@ -166,15 +168,22 @@ impl IoCompletionPort {
         self.inner.handle
     }
 
-    pub fn wake(&self) -> Result<()> {
-        if unsafe {
-            PostQueuedCompletionStatus(self.inner.handle, 0, WAKE_TOKEN, std::ptr::null_mut())
-        } != 0
+    fn push_completion_status(
+        &self,
+        len: u32,
+        token: usize,
+        overlapped: *mut Overlapped,
+    ) -> Result<()> {
+        if unsafe { PostQueuedCompletionStatus(self.inner.handle, len, token, overlapped as _) }
+            != 0
         {
             Ok(())
         } else {
             Err(Error::last_os_error())
         }
+    }
+    pub fn wake(&self) -> Result<()> {
+        self.push_completion_status(0, WAKE_TOKEN, std::ptr::null_mut())
     }
 
     pub fn wait(&self, events: &mut [OverlappedEntry], timeout_ms: i32) -> std::io::Result<i32> {
@@ -307,6 +316,132 @@ impl IoCompletionPort {
         }
     }
 
+    pub fn accept(&self, listen_socket: RawSocket, buf: *mut AcceptBuffer) -> Result<()> {
+        let rruf = unsafe { &mut *buf };
+        let mut bytesreceived: libc::c_ulong = 0;
+        if unsafe {
+            WinSock::AcceptEx(
+                listen_socket as _,
+                rruf.client as _,
+                rruf.addresses_memory.as_mut_ptr() as _,
+                0,
+                (std::mem::size_of::<WinSock::SOCKADDR_STORAGE>() + 16) as _,
+                (std::mem::size_of::<WinSock::SOCKADDR_STORAGE>() + 16) as _,
+                &mut bytesreceived as _,
+                &mut rruf.overlapped as *mut Overlapped as _,
+            ) != 0
+        } {
+            println!("TODO: AcceptEx completed inline");
+            Ok(())
+        } else {
+            let err = unsafe { WinSock::WSAGetLastError() };
+            match err {
+                WinSock::WSA_IO_PENDING => {
+                    println!(" AcceptEx pending");
+                    Ok(())
+                }
+                _ => Err(wsaerror_to_error(err)),
+            }
+        }
+    }
+
+    pub fn recvv(
+        &self,
+        socket: super::RawSocket,
+        buffers: &mut [WSABUF],
+        overlapped: *mut Overlapped,
+    ) -> Result<()> {
+        if buffers.len() > libc::c_ulong::MAX as _ {
+            return Err(Error::from(ErrorKind::InvalidInput));
+        }
+        let mut flags: libc::c_ulong = 0 as _;
+        if unsafe {
+            WinSock::WSARecv(
+                socket as _,
+                buffers.as_mut_ptr(),
+                buffers.len() as _,
+                std::ptr::null_mut(),
+                &mut flags as _,
+                overlapped as _,
+                None,
+            )
+        } != WinSock::SOCKET_ERROR
+        {
+            println!("TODO: recv completed inline");
+            Ok(())
+        } else {
+            let err = unsafe { WinSock::WSAGetLastError() };
+            match err {
+                WinSock::WSA_IO_PENDING => {
+                    println!(" recv pending");
+                    Ok(())
+                }
+                _ => Err(wsaerror_to_error(err)),
+            }
+        }
+    }
+    pub fn recv(
+        &self,
+        socket: super::RawSocket,
+        buffer: &mut [u8],
+        overlapped: *mut Overlapped,
+    ) -> Result<()> {
+        let len = buffer.len().to_u32().unwrap_or(u32::MAX);
+        let mut buffers = [WSABUF {
+            len,
+            buf: buffer.as_mut_ptr(),
+        }; 1];
+        self.recvv(socket, &mut buffers, overlapped)
+    }
+    pub fn sendv(
+        &self,
+        socket: super::RawSocket,
+        buffers: &[WSABUF],
+        overlapped: *mut Overlapped,
+    ) -> Result<()> {
+        if buffers.len() > libc::c_ulong::MAX as _ {
+            return Err(Error::from(ErrorKind::InvalidInput));
+        }
+        if unsafe {
+            WinSock::WSASend(
+                socket as _,
+                buffers.as_ptr(),
+                buffers.len() as _,
+                std::ptr::null_mut(),
+                0,
+                overlapped as _,
+                None,
+            )
+        } != WinSock::SOCKET_ERROR
+        {
+            println!("TODO: send completed inline");
+            // self.push_completion_status(buffers.len() as _, 9876, overlapped)
+            Ok(())
+        } else {
+            let err = unsafe { WinSock::WSAGetLastError() };
+            match err {
+                WinSock::WSA_IO_PENDING => {
+                    println!(" send pending");
+                    Ok(())
+                }
+                _ => Err(wsaerror_to_error(err)),
+            }
+        }
+    }
+    pub fn send(
+        &self,
+        socket: super::RawSocket,
+        buffer: &[u8],
+        overlapped: *mut Overlapped,
+    ) -> Result<()> {
+        let len = buffer.len().to_u32().unwrap_or(u32::MAX);
+        let buffers = [WSABUF {
+            len,
+            buf: buffer.as_ptr() as _,
+        }; 1];
+        self.sendv(socket, &buffers, overlapped)
+    }
+
     pub fn open(
         &self,
         path: *const i8,
@@ -333,9 +468,47 @@ impl IoCompletionPort {
     }
 }
 
+pub fn wsaerror_to_error(err: WinSock::WSA_ERROR) -> Error {
+    match err {
+        WinSock::WSAECONNABORTED => Error::from(ErrorKind::ConnectionAborted),
+        WinSock::WSAECONNRESET => Error::from(ErrorKind::ConnectionReset),
+        WinSock::WSAECONNREFUSED => Error::from(ErrorKind::ConnectionRefused),
+        WinSock::WSAENOTCONN => Error::from(ErrorKind::NotConnected),
+        WinSock::WSAEFAULT => Error::from(ErrorKind::InvalidInput),
+        _ => {
+            log::warn!("TODO: wsaerror_to_error({})", err);
+            Error::from(ErrorKind::Other)
+        }
+    }
+}
+
+#[repr(C)]
+pub struct AcceptBuffer {
+    client: RawSocket,
+    len: libc::c_ulong,
+    overlapped: Overlapped,
+    /// @see [GetAcceptExSockaddrs](https://learn.microsoft.com/en-us/windows/win32/api/mswsock/nf-mswsock-getacceptexsockaddrs) to parse
+    addresses_memory: [u8; std::mem::size_of::<WinSock::SOCKADDR_STORAGE>() + 2 * 16],
+}
+impl AcceptBuffer {
+    pub fn new(accept_socket: RawSocket) -> Self {
+        Self {
+            client: accept_socket,
+            len: 0,
+            overlapped: Overlapped::new(),
+            addresses_memory: unsafe { std::mem::zeroed() },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, io::Write, os::windows::io::AsRawHandle};
+    use core::str;
+    use std::{
+        fs::File,
+        io::Write,
+        os::windows::io::{AsRawHandle, AsRawSocket, AsSocket},
+    };
 
     use super::*;
 
@@ -412,15 +585,95 @@ mod tests {
             }
             crate::sys::ioutils::close_handle_log_on_error(hfile.0);
         }
-        println!("sz: {}", std::mem::size_of::<crate::sys::StatX>());
+    }
+
+    #[test]
+    fn test_socket() {
+        use socket2::{Domain, Socket, Type};
+        use std::io::{Read, Write};
+        use std::net::{SocketAddr, TcpStream};
+        let mut evbuf = [OverlappedEntry::new(); 4];
+        let socket = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
+        let iocp = IoCompletionPort::new(0).unwrap();
+        let address: SocketAddr = "127.0.0.1:8282".parse().unwrap();
+        let address = address.into();
+        socket.bind(&address).unwrap();
+        socket.listen(128).unwrap();
+
+        // TODO: IOCPAccept
+        iocp.attach_socket(socket.as_raw_socket(), 1234).unwrap();
+        let client = Socket::new(Domain::IPV4, Type::STREAM, None).unwrap();
+        let mut abuf = AcceptBuffer::new(client.as_raw_socket());
+        iocp.attach_socket(client.as_raw_socket(), 4321).unwrap();
+        iocp.accept(socket.as_raw_socket(), &mut abuf as _).unwrap();
+        let r = iocp.wait(&mut evbuf, -1).unwrap();
+        println!("\n - wait(accept) => {:?}", r);
+        for i in 0..r as usize {
+            println!("  =>  {:?}", evbuf[i]);
+            assert!(evbuf[i].token() == 1234);
+            if let Some(ovlp) = evbuf[i].overlapped() {
+                let ovlp = unsafe { ovlp.as_ref() };
+                println!("  =====> {:?}", ovlp.bytes_transferred());
+            }
+        }
+
+        let raw_socket = abuf.client;
+        let mut buf = [b' '; 256];
+        // let (client, addr) = socket.accept().unwrap();
+        // let raw_socket = client.as_socket().as_raw_socket();
+        // iocp.attach_socket(raw_socket, 4242).unwrap();
+        // println!("New client {:?}", addr);
+        // let mut buf = [b' '; 256];
+
+        // let mut client: TcpStream = client.into();
+        // client.read(&mut buf);
+        // println!("Got {}", str::from_utf8(&buf).unwrap());
+        // client.write("World".as_bytes()).unwrap();
+        // client.shutdown(std::net::Shutdown::Both).unwrap();
+        let mut overlapped = Overlapped::new();
+        iocp.recv(raw_socket, &mut buf, &mut overlapped).unwrap();
+        let r = iocp.wait(&mut evbuf, 3000).unwrap();
+        println!("\n - wait(recv) => {:?}", r);
+        for i in 0..r as usize {
+            println!("  =>  {:?}", evbuf[i]);
+            if let Some(ovlp) = evbuf[i].overlapped() {
+                let ovlp = unsafe { ovlp.as_ref() };
+                println!(
+                    "  =====> {:?}",
+                    String::from_utf8_lossy(&buf[..ovlp.bytes_transferred()])
+                );
+            }
+        }
+        iocp.send(raw_socket, "World!".as_bytes(), &mut overlapped)
+            .unwrap();
+        let r = iocp.wait(&mut evbuf, 3000).unwrap();
+        println!("\n - wait(send) => {:?}", r);
+        for i in 0..r as usize {
+            println!("  =>  {:?}", evbuf[i]);
+            if let Some(ovlp) = evbuf[i].overlapped() {
+                let ovlp = unsafe { ovlp.as_ref() };
+                println!("  =====> Sent: {:?}", ovlp.bytes_transferred());
+            }
+        }
         println!(
-            "offset: {}",
-            std::mem::offset_of!(crate::sys::StatX, mnt_id)
+            "storage: {}",
+            std::mem::size_of::<WinSock::SOCKADDR_STORAGE>()
         );
-        println!(
-            "doSome: {},{}",
-            crate::sys::StatX::do_something(),
-            crate::sys::StatX::do_something_else(),
-        );
+        // client.shutdown(std::net::Shutdown::Write).unwrap();
+        // iocp.recv(raw_socket, &mut buf, &mut overlapped).unwrap();
+        // let r = iocp.wait(&mut evbuf, 3000).unwrap();
+        // println!("\n - wait(r) => {:?}", r);
+        // for i in 0..r as usize {
+        //     println!("  =>  {:?}", evbuf[i]);
+        //     if let Some(ovlp) = evbuf[i].overlapped() {
+        //         let ovlp = unsafe { ovlp.as_ref() };
+        //         println!(
+        //             "  =====> {:?}",
+        //             String::from_utf8_lossy(&buf[..ovlp.bytes_transferred()])
+        //         );
+        //     }
+        // }
+        // std::mem::forget(client);
+        // unsafe { WinSock::closesocket(raw_socket as _) };
     }
 }
