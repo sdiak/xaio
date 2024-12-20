@@ -1,5 +1,5 @@
 use std::io::{Error, ErrorKind, Result};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 cfg_if::cfg_if! {
     if #[cfg(target_family = "unix")] {
@@ -54,6 +54,9 @@ impl Dir {
     pub fn open<P: AsRef<Path>>(path: P, options: Options) -> Result<Dir> {
         options.check()?;
         Err(Error::from(ErrorKind::Unsupported)) // TODO:
+    }
+    pub fn path(&self) -> Option<&PathBuf> {
+        todo!()
     }
 }
 
