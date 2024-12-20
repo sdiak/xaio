@@ -12,6 +12,7 @@ cfg_if::cfg_if! {
     }
 }
 
+pub type OsSocketAddr = os_socketaddr::OsSocketAddr;
 mod poll;
 pub use poll::*;
 pub mod statx;

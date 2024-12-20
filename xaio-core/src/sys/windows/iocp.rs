@@ -1,3 +1,4 @@
+use crate::sys::OsSocketAddr;
 use num::ToPrimitive;
 use std::fmt::Debug;
 use std::i32;
@@ -325,8 +326,8 @@ impl IoCompletionPort {
                 rruf.client as _,
                 rruf.addresses_memory.as_mut_ptr() as _,
                 0,
-                (std::mem::size_of::<WinSock::SOCKADDR_STORAGE>() + 16) as _,
-                (std::mem::size_of::<WinSock::SOCKADDR_STORAGE>() + 16) as _,
+                (std::mem::size_of::<OsSocketAddr>() + 16) as _,
+                (std::mem::size_of::<OsSocketAddr>() + 16) as _,
                 &mut bytesreceived as _,
                 &mut rruf.overlapped as *mut Overlapped as _,
             ) != 0
@@ -492,7 +493,7 @@ pub struct AcceptBuffer {
     len: libc::c_ulong,
     overlapped: Overlapped,
     /// @see [GetAcceptExSockaddrs](https://learn.microsoft.com/en-us/windows/win32/api/mswsock/nf-mswsock-getacceptexsockaddrs) to parse
-    addresses_memory: [u8; std::mem::size_of::<WinSock::SOCKADDR_STORAGE>() + 2 * 16],
+    addresses_memory: [u8; std::mem::size_of::<OsSocketAddr>() + 2 * 16],
 }
 impl AcceptBuffer {
     pub fn new(accept_socket: RawSocket) -> Self {
@@ -502,6 +503,35 @@ impl AcceptBuffer {
             overlapped: Overlapped::new(),
             addresses_memory: unsafe { std::mem::zeroed() },
         }
+    }
+    pub fn addresses(&self) -> (Option<&OsSocketAddr>, Option<&OsSocketAddr>) {
+        let mut local: *mut OsSocketAddr = std::ptr::null_mut();
+        let mut remote: *mut OsSocketAddr = std::ptr::null_mut();
+        let plocal: *mut *mut OsSocketAddr = &mut local;
+        let premote: *mut *mut OsSocketAddr = &mut remote;
+        unsafe {
+            WinSock::GetAcceptExSockaddrs(
+                &self.addresses_memory as *const u8 as *mut libc::c_void,
+                self.len,
+                (std::mem::size_of::<OsSocketAddr>() + 16) as _,
+                (std::mem::size_of::<OsSocketAddr>() + 16) as _,
+                plocal as _,
+                std::mem::size_of::<OsSocketAddr>() as _,
+                premote as _,
+                std::mem::size_of::<OsSocketAddr>() as _,
+            )
+        };
+        let local: Option<&OsSocketAddr> = if local.is_null() {
+            None
+        } else {
+            Some(unsafe { &*local })
+        };
+        let remote: Option<&OsSocketAddr> = if remote.is_null() {
+            None
+        } else {
+            Some(unsafe { &*remote })
+        };
+        (local, remote)
     }
 }
 
@@ -620,6 +650,7 @@ mod tests {
                 println!("  =====> {:?}", ovlp.bytes_transferred());
             }
         }
+        println!("Addresses: {:?}", abuf.addresses());
 
         let raw_socket = abuf.client;
         let mut buf = [b' '; 256];
@@ -659,10 +690,7 @@ mod tests {
                 println!("  =====> Sent: {:?}", ovlp.bytes_transferred());
             }
         }
-        println!(
-            "storage: {}",
-            std::mem::size_of::<WinSock::SOCKADDR_STORAGE>()
-        );
+        println!("storage: {}", std::mem::size_of::<OsSocketAddr>());
         // client.shutdown(std::net::Shutdown::Write).unwrap();
         // iocp.recv(raw_socket, &mut buf, &mut overlapped).unwrap();
         // let r = iocp.wait(&mut evbuf, 3000).unwrap();
