@@ -4,14 +4,11 @@ use std::path::{Path, PathBuf};
 cfg_if::cfg_if! {
     if #[cfg(target_family = "unix")] {
         pub type RawDirFd = libc::c_int;
-        mod unix;
-        pub use unix::*;
     } else if #[cfg(target_family = "windows")] {
         pub type RawDirFd = std::os::windows::raw::HANDLE;
-        mod windows;
-        pub use windows::*;
     }
 }
+mod sys;
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -47,7 +44,7 @@ impl Default for Options {
 }
 
 pub struct Dir {
-    pub(crate) handle: RawDirFd,
+    pub(crate) fd: RawDirFd,
 }
 
 impl Dir {
@@ -56,6 +53,7 @@ impl Dir {
         Err(Error::from(ErrorKind::Unsupported)) // TODO:
     }
     pub fn path(&self) -> Option<&PathBuf> {
+        sys::path_of(self.fd);
         todo!()
     }
 }
