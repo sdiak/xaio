@@ -511,8 +511,8 @@ impl AcceptBuffer {
         let premote: *mut *mut OsSocketAddr = &mut remote;
         unsafe {
             WinSock::GetAcceptExSockaddrs(
-                &self.addresses_memory as *const u8 as *mut libc::c_void,
-                self.len,
+                &self.addresses_memory as *const u8 as *const libc::c_void,
+                0, //self.len,
                 (std::mem::size_of::<OsSocketAddr>() + 16) as _,
                 (std::mem::size_of::<OsSocketAddr>() + 16) as _,
                 plocal as _,
@@ -521,6 +521,7 @@ impl AcceptBuffer {
                 std::mem::size_of::<OsSocketAddr>() as _,
             )
         };
+        println!("Addrs: {:?}, {:?}", local, remote);
         let local: Option<&OsSocketAddr> = if local.is_null() {
             None
         } else {
@@ -650,7 +651,8 @@ mod tests {
                 println!("  =====> {:?}", ovlp.bytes_transferred());
             }
         }
-        println!("Addresses: {:?}", abuf.addresses());
+        // println!("Addresses: {:?}", abuf.addresses());
+        // abuf.addresses();
 
         let raw_socket = abuf.client;
         let mut buf = [b' '; 256];
