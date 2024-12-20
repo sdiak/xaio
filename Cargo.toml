@@ -1,6 +1,6 @@
 [workspace]
 
-members = [
+members = [ "libdir",
     "xaio-core",
     "xaio-future",
 ]

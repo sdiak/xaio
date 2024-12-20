@@ -1,6 +1,7 @@
 cfg_if::cfg_if! {
     if #[cfg(target_os = "linux")] {
-        pub use libc::{STATX_TYPE, STATX_MODE, STATX_NLINK, STATX_UID, STATX_GID, STATX_ATIME, STATX_MTIME, STATX_CTIME, STATX_INO, STATX_SIZE, STATX_BLOCKS, STATX_BTIME };
+        pub use libc::{STATX_TYPE, STATX_MODE, STATX_NLINK, STATX_UID, STATX_GID, STATX_ATIME, STATX_MTIME, STATX_CTIME,
+            STATX_INO, STATX_SIZE, STATX_BLOCKS, STATX_BTIME, STATX_MNT_ID, STATX_DIOALIGN };
     } else {
         const STATX_TYPE: libc::c_uint = 1u32 << 0;
         const STATX_MODE: libc::c_uint = 1u32 << 1;
@@ -14,6 +15,8 @@ cfg_if::cfg_if! {
         const STATX_SIZE: libc::c_uint = 1u32 << 9;
         const STATX_BLOCKS: libc::c_uint = 1u32 << 10;
         const STATX_BTIME: libc::c_uint = 1u32 << 11;
+        const STATX_MNT_ID: libc::c_uint = 1u32 << 12;
+        const STATX_DIOALIGN: libc::c_uint = 1u32 << 13;
     }
 }
 
@@ -21,14 +24,14 @@ cfg_if::cfg_if! {
 #[derive(Debug, Clone, Copy)]
 pub struct StatXTimestamp {
     /// Seconds elapsed since EPOCH
-    sec: u64,
+    pub sec: u64,
     /// Nanoseconds after `sec`
-    nsec: u32,
+    pub nsec: u32,
 }
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub struct Want: libc::c_uint {
+    pub struct StatXWant: libc::c_uint {
         /// Want file type
         const TYPE = STATX_TYPE;
         /// Want file mode
@@ -55,10 +58,10 @@ bitflags::bitflags! {
         const BTIME = STATX_BTIME;
     }
 }
-impl Want {
+impl StatXWant {
     /// Same as `TYPE | MODE | NLINK | UID | GID | ATIME | MTIME | CTIME | INO | SIZE | BLOCKS`
-    pub const fn basic_stats() -> Want {
-        Want::from_bits_retain(
+    pub const fn basic_stats() -> StatXWant {
+        StatXWant::from_bits_retain(
             STATX_TYPE
                 | STATX_MODE
                 | STATX_NLINK
@@ -73,8 +76,8 @@ impl Want {
         )
     }
     /// All field available on current system
-    pub const fn all_stats() -> Want {
-        Want::from_bits_retain(libc::c_uint::MAX)
+    pub const fn all_stats() -> StatXWant {
+        StatXWant::from_bits_retain(libc::c_uint::MAX)
     }
 }
 
@@ -82,7 +85,7 @@ impl Want {
 #[derive(Debug, Clone, Copy)]
 pub struct StatX {
     /// Mask indicating the filled fields
-    pub mask: u32,
+    pub mask: StatXWant,
     /// Block size for I/O
     pub blksize: u32,
     /// Extra file attributes
@@ -101,7 +104,7 @@ pub struct StatX {
     pub size: u64,
     /// Number of 512 bytes blocks allocated
     pub blocks: u64,
-    /// Mask to show what's supported in stx_attributes
+    /// Mask showing what's supported in attributes
     pub attributes_mask: u64,
     /// Last access timestamp
     pub atime: StatXTimestamp,
@@ -130,7 +133,7 @@ pub struct StatX {
 }
 
 impl StatX {
-    pub fn do_something() -> i32 {
-        42
-    }
+    // pub fn new() -> Result<StatX> {
+    //     super::statix()
+    // }
 }

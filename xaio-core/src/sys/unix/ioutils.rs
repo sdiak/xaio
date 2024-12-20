@@ -4,6 +4,7 @@ use log;
 use std::fs::File;
 use std::io::{Error, ErrorKind, Read, Result, Write};
 use std::os::fd::FromRawFd;
+use std::sync::{Mutex, MutexGuard};
 
 pub(crate) fn read_all(fd: libc::c_int, buf: &mut [u8], block_on_eagain: bool) -> Result<()> {
     let mut file = std::mem::ManuallyDrop::new(unsafe { File::from_raw_fd(fd) });
@@ -183,4 +184,33 @@ pub(crate) fn libc_pipe2(
     } else {
         Err(Error::last_os_error())
     }
+}
+
+static CWD_LOCK: Mutex<()> = Mutex::<()>::new(());
+struct AtHelper<'a> {
+    guard: MutexGuard<'a, ()>,
+    old_working_dir: std::path::PathBuf,
+}
+
+impl<'a> AtHelper<'a> {
+    fn new(dirfd: libc::c_int) -> Result<AtHelper<'a>> {
+        let thiz = AtHelper {
+            guard: CWD_LOCK.lock().expect("Unrecoverable error"),
+            old_working_dir: std::env::current_dir()?,
+        };
+        if unsafe { libc::fchdir(dirfd) } >= 0 {
+            Ok(thiz)
+        } else {
+            Err(Error::last_os_error())
+        }
+    }
+}
+impl<'a> Drop for AtHelper<'a> {
+    fn drop(&mut self) {
+        std::env::set_current_dir(self.old_working_dir.clone()).expect("Unrecoverable error");
+    }
+}
+pub(crate) fn with_dir<F: FnOnce() -> R, R>(dirfd: libc::c_int, f: F) -> R {
+    let _guard = AtHelper::new(dirfd);
+    f()
 }
