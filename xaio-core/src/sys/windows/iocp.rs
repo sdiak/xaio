@@ -482,6 +482,10 @@ pub fn wsaerror_to_error(err: WinSock::WSA_ERROR) -> Error {
     }
 }
 
+struct DD<const S: usize> {
+    d: [u8; S],
+}
+
 #[repr(C)]
 pub struct AcceptBuffer {
     client: RawSocket,
