@@ -32,15 +32,12 @@ impl SLink {
     }
 
     #[inline(always)]
-    pub(crate) fn into_ref<'a, Collection, T: SListNode>(
-        col: &'a Collection,
-        link: *const SLink,
-    ) -> Option<NodeRef<'a, Collection, T>> {
+    pub(crate) fn into_ref<'a, T: SListNode>(link: *const SLink) -> Option<&'a T> {
         if link.is_null() {
             None
         } else {
             let uptr = link as usize - T::offset_of_link();
-            Some(NodeRef::new(col, unsafe { &*(uptr as *mut T) }))
+            Some(unsafe { &*(uptr as *mut T) })
         }
     }
 

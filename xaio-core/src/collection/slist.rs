@@ -1,6 +1,7 @@
 use std::{marker::PhantomData, sync::atomic::Ordering};
 
-use super::{NodeRef, SLink, SListNode};
+pub use super::NodeRef;
+use super::{SLink, SListNode};
 
 pub struct SList<T: SListNode> {
     pub(crate) head: *mut SLink,
@@ -28,16 +29,16 @@ impl<T: SListNode> SList<T> {
     /// # Returns
     ///  * `Some(front)` the front of the list when `!self.is_empty()`
     ///  * `None` when `self.is_empty()`
-    pub fn front<'a>(&'a self) -> Option<NodeRef<'a, Self, T>> {
-        SLink::into_ref::<Self, T>(self, self.head)
+    pub fn front<'a>(&'a self) -> Option<&'a T> {
+        SLink::into_ref::<'a, T>(self.head)
     }
 
     #[inline(always)]
     /// # Returns
     ///  * `Some(back)` the back of the list when `!self.is_empty()`
     ///  * `None` when `self.is_empty()`
-    pub fn back<'a>(&'a self) -> Option<NodeRef<'a, Self, T>> {
-        SLink::into_ref::<Self, T>(self, self.tail)
+    pub fn back<'a>(&'a self) -> Option<&'a T> {
+        SLink::into_ref::<'a, T>(self.tail)
     }
 
     /// Adds a node at the front of the list
@@ -129,13 +130,18 @@ impl<T: SListNode> SList<T> {
 
 #[cfg(test)]
 mod test {
-    use std::ops::Deref;
+    use std::{collections::LinkedList, ops::Deref};
 
     use super::*;
 
     struct IntNode {
         pub val: i32,
         link: SLink,
+    }
+    impl Drop for IntNode {
+        fn drop(&mut self) {
+            println!("Drop: {:#x}", self as *mut Self as usize);
+        }
     }
     impl IntNode {
         fn new(val: i32) -> Self {
@@ -178,13 +184,20 @@ mod test {
 
         list.push_back(a);
         assert!(!list.is_empty());
-        assert_eq!(list.front().unwrap().deref().val, 0);
-        assert_eq!(list.back().unwrap().deref().val, 0);
+        assert_eq!(list.front().unwrap().val, 0);
+        assert_eq!(list.back().unwrap().val, 0);
         let bor = list.front();
-        drop(bor);
+        let _ = bor;
         a = list.pop_front().unwrap();
         assert_eq!(a.val, 0);
 
+        // let mut l = LinkedList::<IntNode>::new();
+        // l.push_back(IntNode::new(0));
+        // let f = l.front().unwrap();
+        // let a = l.pop_back().unwrap();
+        // println!("{}", a.val);
+        // drop(a);
+        // println!("{}", f.val);
         /*let mut a = IoReq::default();
         let mut b = IoReq::default();
         let mut c = IoReq::default();
