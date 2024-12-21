@@ -7,6 +7,8 @@ pub mod io_req_lifo;
 pub mod sys;
 pub use io_req::*;
 
+pub mod collection;
+
 pub type PhantomUnsync = std::marker::PhantomData<std::cell::Cell<()>>;
 pub type PhantomUnsend = std::marker::PhantomData<std::sync::MutexGuard<'static, ()>>;
 
@@ -16,6 +18,15 @@ where
 {
     std::panic::catch_unwind(constructor)
         .map_err(|_| std::io::Error::from(std::io::ErrorKind::OutOfMemory))
+}
+
+#[macro_export]
+macro_rules! pin_mut {
+    ($var:ident) => {
+        let mut $var = $var;
+        #[allow(unused_mut)]
+        let mut $var = unsafe { Pin::new_unchecked(&mut $var) };
+    };
 }
 
 pub fn add(left: u64, right: u64) -> u64 {

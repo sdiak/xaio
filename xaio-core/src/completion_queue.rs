@@ -85,8 +85,9 @@ impl Inner {
         }
     }
 
-    pub fn park_begin(&self, ready_list: &mut IoReqFifo) -> usize {
+    fn park_begin(&self, ready_list: &mut IoReqFifo) -> usize {
         if self.owner_thread_id != ThreadId::current() {
+            // Mostly for c-binding
             eprintln!("CompletionQueue::park_begin() can only be called from the owner thread");
             std::process::abort();
         }
@@ -102,8 +103,9 @@ impl Inner {
         }
     }
 
-    pub fn park_end(&self, ready_list: &mut IoReqFifo) -> usize {
+    fn park_end(&self, ready_list: &mut IoReqFifo) -> usize {
         if self.owner_thread_id != ThreadId::current() {
+            // Mostly for c-binding
             eprintln!("CompletionQueue::park_end() can only be called from the owner thread");
             std::process::abort();
         }
