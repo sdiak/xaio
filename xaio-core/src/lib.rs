@@ -1,6 +1,14 @@
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 
+pub mod completion_queue;
+mod io_req;
+pub mod io_req_fifo;
+pub mod io_req_lifo;
 pub mod sys;
+pub use io_req::*;
+
+pub type PhantomUnsync = std::marker::PhantomData<std::cell::Cell<()>>;
+pub type PhantomUnsend = std::marker::PhantomData<std::sync::MutexGuard<'static, ()>>;
 
 fn catch_enomem<C, T>(constructor: C) -> std::io::Result<T>
 where
