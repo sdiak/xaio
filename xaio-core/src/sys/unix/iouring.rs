@@ -11,7 +11,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 use uring_sys2;
 use uring_sys2::io_uring_op as Op;
 
-const WAKER_TOKEN: u64 = u64::MAX;
+const WAKE_TOKEN: u64 = u64::MAX;
 pub static PROBE: LazyLock<Probe> = LazyLock::new(Probe::new);
 
 bitflags! {
@@ -113,7 +113,7 @@ impl SubmissionQueue {
     }
 
     #[inline(always)]
-    pub fn next(&mut self) -> Result<Submission> {
+    pub fn next(&mut self) -> Option<Submission> {
         let r = unsafe { &mut *self.ring };
         let next: libc::c_uint = self.tail.wrapping_add(1);
         let shift: u32 = ((r.flags & uring_sys2::IORING_SETUP_SQE128) != 0) as _;
@@ -131,9 +131,9 @@ impl SubmissionQueue {
                     .offset((self.tail & r.sq.ring_mask).wrapping_shl(shift) as _)
             };
             self.tail = next;
-            Ok(Submission::new(sqe))
+            Some(Submission::new(sqe))
         } else {
-            Err(Error::from(ErrorKind::WouldBlock))
+            None
         }
     }
 
@@ -306,8 +306,12 @@ impl URing {
             let fd = self.inner.waker.as_raw_fd();
             let buffer = &self.inner.waker_buffer as *const u64 as usize;
             self.submit_batch(|mut sqes| {
-                sqes.next()?.prep_read(fd, buffer as _, 8, 0, WAKER_TOKEN)?;
-                Ok(sqes)
+                if let Some(mut sqe) = sqes.next() {
+                    sqe.prep_read(fd, buffer as _, 8, 0, WAKE_TOKEN)?;
+                    Ok(sqes)
+                } else {
+                    Err(ErrorKind::WouldBlock.into())
+                }
             })?;
             self.inner.need_init.store(false, Ordering::Relaxed);
             Ok(())
@@ -356,10 +360,6 @@ impl URing {
 
 #[repr(transparent)]
 #[derive(Copy, Clone)]
-pub struct Sqe(*mut uring_sys2::io_uring_sqe);
-
-#[repr(transparent)]
-#[derive(Copy, Clone)]
 pub struct Submission(NonNull<uring_sys2::io_uring_sqe>);
 
 impl Submission {
@@ -372,6 +372,7 @@ impl Submission {
         sqe.__bindgen_anon_4.buf_index = 0;
         sqe.personality = 0;
         sqe.__bindgen_anon_5.file_index = 0;
+        sqe.user_data = 0; // otherwize, we could see WAKEN_TOKEN when the user does not set use_data !
         unsafe {
             sqe.__bindgen_anon_6.__bindgen_anon_1.as_mut().addr3 = 0;
             sqe.__bindgen_anon_6.__bindgen_anon_1.as_mut().__pad2[0] = 0;
@@ -408,7 +409,7 @@ impl Submission {
     }
     #[inline(always)]
     pub fn set_token(&mut self, token: u64) -> Result<()> {
-        if token != WAKER_TOKEN {
+        if token != WAKE_TOKEN {
             unsafe { self.0.as_mut() }.user_data = token as _;
             Ok(())
         } else {
@@ -423,82 +424,6 @@ impl Submission {
     #[inline(always)]
     pub fn set_flags(&mut self, flags: SubmissionFlag) {
         unsafe { self.0.as_mut() }.flags = flags.bits();
-    }
-}
-
-impl Sqe {
-    #[inline]
-    fn new(sqe: *mut uring_sys2::io_uring_sqe, linked: bool) -> Self {
-        let sqe = unsafe { &mut *sqe };
-        sqe.flags = if linked {
-            uring_sys2::io_uring_sqe_flags_bit_IOSQE_IO_LINK_BIT as _
-        } else {
-            0
-        };
-        sqe.ioprio = 0;
-        sqe.__bindgen_anon_3.rw_flags = 0;
-        sqe.__bindgen_anon_4.buf_index = 0;
-        sqe.personality = 0;
-        sqe.__bindgen_anon_5.file_index = 0;
-        sqe.user_data = 0; // otherwize, we could see WAKEN_TOKEN when the user does not set use_data !
-        unsafe {
-            sqe.__bindgen_anon_6.__bindgen_anon_1.as_mut().addr3 = 0;
-            sqe.__bindgen_anon_6.__bindgen_anon_1.as_mut().__pad2[0] = 0;
-        }
-        Self(sqe as *mut uring_sys2::io_uring_sqe)
-    }
-
-    #[inline]
-    fn initialize(self) -> NonNull<uring_sys2::io_uring_sqe> {
-        let sqe = unsafe { &mut *self.0 };
-        sqe.opcode = Op::IORING_OP_NOP as _;
-        sqe.flags = 0;
-        sqe.ioprio = 0;
-        sqe.__bindgen_anon_3.rw_flags = 0;
-        sqe.__bindgen_anon_4.buf_index = 0;
-        sqe.personality = 0;
-        sqe.__bindgen_anon_5.file_index = 0;
-        unsafe {
-            sqe.__bindgen_anon_6.__bindgen_anon_1.as_mut().addr3 = 0;
-            sqe.__bindgen_anon_6.__bindgen_anon_1.as_mut().__pad2[0] = 0;
-            NonNull::new_unchecked(sqe as *mut uring_sys2::io_uring_sqe)
-        }
-    }
-
-    #[inline]
-    fn prep_rw(&mut self, op: Op, fd: libc::c_int, addr: *mut libc::c_void, len: u32, offset: u64) {
-        let sqe = unsafe { &mut *self.0 };
-        assert!(
-            sqe.opcode == Op::IORING_OP_NOP as _,
-            "Can only prep No-op submission"
-        );
-        sqe.opcode = op as _;
-        sqe.fd = fd;
-        sqe.__bindgen_anon_1.off = offset;
-        sqe.__bindgen_anon_2.addr = addr as usize as _;
-        sqe.len = len;
-    }
-
-    #[inline(always)]
-    pub fn prep_read(
-        &mut self,
-        fd: libc::c_int,
-        buf: *mut libc::c_void,
-        nbytes: u32,
-        offset: u64,
-        token: usize,
-    ) {
-        self.prep_rw(Op::IORING_OP_READ, fd, buf, nbytes, offset);
-        self.set_token(token);
-    }
-
-    #[inline(always)]
-    pub fn token(&self) -> usize {
-        unsafe { &*self.0 }.user_data as _
-    }
-    #[inline(always)]
-    pub fn set_token(&self, token: usize) {
-        unsafe { &mut *self.0 }.user_data = token as _;
     }
 }
 
