@@ -17,10 +17,20 @@ impl<T: SListNode> Drop for SList<T> {
 
 impl<T: SListNode> SList<T> {
     /// Returns a new empty list
-    pub const fn new() -> SList<T> {
+    pub const fn new() -> Self {
         Self {
             head: std::ptr::null_mut(),
             tail: std::ptr::null_mut(),
+            _phantom: PhantomData::<T> {},
+        }
+    }
+    /// Returns a new list with the given node
+    pub fn from_node(node: Box<T>) -> Self {
+        let node: *mut SLink = SLink::from::<T>(node);
+        unsafe { (*node).list_set_next(std::ptr::null_mut(), Ordering::Relaxed) };
+        Self {
+            head: node,
+            tail: node,
             _phantom: PhantomData::<T> {},
         }
     }
@@ -116,6 +126,20 @@ impl<T: SListNode> SList<T> {
         self.tail = new_tail;
     }
 
+    pub fn append(&mut self, other: &mut SList<T>) {
+        if other.is_empty() {
+            return;
+        }
+        if self.tail.is_null() {
+            self.head = other.head;
+        } else {
+            unsafe { (*self.tail).list_update_next(other.head, Ordering::Relaxed) };
+        }
+        self.tail = other.tail;
+        other.head = std::ptr::null_mut();
+        other.tail = std::ptr::null_mut();
+    }
+
     /// Removes and returns the back of the list when `!self.is_empty()`
     ///
     /// # Returns
@@ -144,10 +168,6 @@ impl<T: SListNode> SList<T> {
             }
         }
         None
-    }
-
-    pub fn append(&mut self, other: &mut SList<T>) {
-        todo!()
     }
 }
 

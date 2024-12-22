@@ -18,7 +18,12 @@ pub struct Receiver<T: SListNode>(Arc<Inner<T>>, crate::PhantomUnsend, crate::Ph
 #[derive(Clone)]
 pub struct Sender<T: SListNode>(Arc<Inner<T>>);
 impl<T: SListNode> Sender<T> {
-    pub fn send(&self, nodes: &mut SList<T>) -> bool {
+    #[inline(always)]
+    pub fn send_one(&self, node: Box<T>) -> bool {
+        self.send_all(&mut SList::from_node(node))
+    }
+    #[inline(always)]
+    pub fn send_all(&self, nodes: &mut SList<T>) -> bool {
         self.0.append(nodes)
     }
 }
