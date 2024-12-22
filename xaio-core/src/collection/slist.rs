@@ -253,6 +253,44 @@ mod test {
     }
 
     #[test]
+    fn test_move() {
+        let a = Box::<IntNode>::new(IntNode::new(0));
+        let b = Box::<IntNode>::new(IntNode::new(1));
+        let c = Box::<IntNode>::new(IntNode::new(2));
+        let d = Box::<IntNode>::new(IntNode::new(3));
+        let mut list = SList::<IntNode>::from_node(a);
+
+        assert!(!list.is_empty());
+        assert_eq!(list.front().unwrap().val, 0);
+        assert_eq!(list.back().unwrap().val, 0);
+
+        list.push_back(b);
+        list.push_back(c);
+        list.push_back(d);
+
+        let mut list2 = SList::<IntNode>::from_node(Box::<IntNode>::new(IntNode::new(-1)));
+        list2.append(&mut list);
+        assert!(list.is_empty());
+        list2.append(&mut SList::<IntNode>::new());
+
+        assert!(list2.pop_back().unwrap().val == 3);
+        assert!(list2.pop_back().unwrap().val == 2);
+        assert!(list2.pop_back().unwrap().val == 1);
+        assert!(list2.pop_back().unwrap().val == 0);
+        assert!(list2.pop_back().unwrap().val == -1);
+
+        let mut list = SList::<IntNode>::from_node(Box::<IntNode>::new(IntNode::new(42)));
+        let mut list2 = SList::<IntNode>::new();
+        assert!(!list.is_empty());
+        assert!(list2.is_empty());
+        list2.append(&mut list);
+        assert!(list.is_empty());
+        assert!(!list2.is_empty());
+        assert!(list2.pop_back().unwrap().val == 42);
+        assert!(list2.is_empty());
+    }
+
+    #[test]
     fn test_push_back() {
         let mut a = Box::<IntNode>::new(IntNode::new(0));
         let mut b = Box::<IntNode>::new(IntNode::new(1));
