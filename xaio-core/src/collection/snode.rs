@@ -1,9 +1,8 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use super::NodeRef;
-
 pub trait SListNode: Sized {
     fn offset_of_link() -> usize;
+    fn drop(ptr: Box<Self>);
 }
 
 pub struct SLink {

@@ -1,12 +1,18 @@
 use std::{marker::PhantomData, sync::atomic::Ordering};
 
-pub use super::NodeRef;
 use super::{SLink, SListNode};
 
 pub struct SList<T: SListNode> {
     pub(crate) head: *mut SLink,
     pub(crate) tail: *mut SLink,
-    _phantom: PhantomData<T>,
+    pub(crate) _phantom: PhantomData<T>,
+}
+
+impl<T: SListNode> Drop for SList<T> {
+    #[inline(always)]
+    fn drop(&mut self) {
+        self.clear();
+    }
 }
 
 impl<T: SListNode> SList<T> {
@@ -39,6 +45,23 @@ impl<T: SListNode> SList<T> {
     ///  * `None` when `self.is_empty()`
     pub fn back<'a>(&'a self) -> Option<&'a T> {
         SLink::into_ref::<'a, T>(self.tail)
+    }
+
+    #[inline(always)]
+    fn clear(&mut self) {
+        if !self.head.is_null() {
+            self.clear_non_empty();
+        }
+    }
+
+    #[inline(never)]
+    fn clear_non_empty(&mut self) {
+        while !self.head.is_null() {
+            let to_drop = self.head;
+            self.head = unsafe { (*to_drop).list_pop_next(Ordering::Relaxed) };
+            T::drop(SLink::into::<T>(to_drop));
+        }
+        self.tail = std::ptr::null_mut();
     }
 
     /// Adds a node at the front of the list
@@ -113,18 +136,18 @@ impl<T: SListNode> SList<T> {
             loop {
                 let next = unsafe { (*it).list_get_next(Ordering::Relaxed) };
                 if next == old_tail {
-                    unsafe {
-                        (*it).list_update_next(
-                            (*old_tail).list_pop_next(Ordering::Relaxed),
-                            Ordering::Relaxed,
-                        )
-                    };
+                    unsafe { (*it).list_update_next(std::ptr::null_mut(), Ordering::Relaxed) };
+                    self.tail = it;
                     return Some(SLink::into::<T>(old_tail));
                 }
                 it = next;
             }
         }
         None
+    }
+
+    pub fn append(&mut self, other: &mut SList<T>) {
+        todo!()
     }
 }
 
@@ -154,6 +177,9 @@ mod test {
     impl SListNode for IntNode {
         fn offset_of_link() -> usize {
             core::mem::offset_of!(IntNode, link)
+        }
+        fn drop(ptr: Box<Self>) {
+            drop(ptr);
         }
     }
 
@@ -191,79 +217,55 @@ mod test {
         a = list.pop_front().unwrap();
         assert_eq!(a.val, 0);
 
-        // let mut l = LinkedList::<IntNode>::new();
-        // l.push_back(IntNode::new(0));
-        // let f = l.front().unwrap();
-        // let a = l.pop_back().unwrap();
-        // println!("{}", a.val);
-        // drop(a);
-        // println!("{}", f.val);
-        /*let mut a = IoReq::default();
-        let mut b = IoReq::default();
-        let mut c = IoReq::default();
-        let mut d = IoReq::default();
-        let pa = unsafe { NonNull::new_unchecked(&mut a as *mut IoReq) };
-        let pb = unsafe { NonNull::new_unchecked(&mut b as *mut IoReq) };
-        let pc = unsafe { NonNull::new_unchecked(&mut c as *mut IoReq) };
-        let _pd = unsafe { NonNull::new_unchecked(&mut d as *mut IoReq) };
+        list.push_back(a);
+        list.push_front(d);
+        list.push_back(b);
+        list.push_front(c);
 
-        let mut ready0 = IoReqFifo::new();
-        assert!(unsafe { ready0.pop_front() }.is_none());
-        assert!(ready0.is_empty());
+        assert!(list.pop_front().unwrap().val == 2);
+        assert!(list.pop_front().unwrap().val == 3);
+        assert!(list.pop_front().unwrap().val == 0);
+        assert!(list.pop_front().unwrap().val == 1);
 
-        unsafe { ready0.push_back(pa) };
-        assert!(!ready0.is_empty());
+        assert!(list.is_empty());
+        assert!(list.front().is_none());
+        assert!(list.back().is_none());
+    }
 
-        assert_eq!(unsafe { ready0.pop_front() }.unwrap(), pa);
-        assert!(ready0.is_empty());
+    #[test]
+    fn test_push_back() {
+        let mut a = Box::<IntNode>::new(IntNode::new(0));
+        let mut b = Box::<IntNode>::new(IntNode::new(1));
+        let mut c = Box::<IntNode>::new(IntNode::new(2));
+        let mut d = Box::<IntNode>::new(IntNode::new(3));
+        let mut list = SList::<IntNode>::new();
 
-        unsafe { ready0.push_back(pa) };
-        assert!(!ready0.is_empty());
-        unsafe { ready0.push_back(pb) };
-        assert!(!ready0.is_empty());
-        unsafe { ready0.push_back(pc) };
-        assert!(!ready0.is_empty());
+        assert!(list.is_empty());
+        assert!(list.pop_front().is_none());
+        assert!(list.pop_back().is_none());
 
-        assert_eq!(unsafe { ready0.pop_front() }.unwrap(), pa);
-        assert_eq!(unsafe { ready0.pop_front() }.unwrap(), pb);
-        assert_eq!(unsafe { ready0.pop_front() }.unwrap(), pc);
-        assert!(ready0.is_empty());
+        list.push_back(b);
+        list.push_back(c);
+        list.push_back(d);
+        list.push_front(a);
 
-        let mut ready1 = IoReqFifo::new();
-        unsafe { ready0.push_back(pa) };
-        assert!(!ready0.is_empty());
-        unsafe { ready0.push_back(pb) };
-        unsafe { ready1.push_back(pc) };
-        assert!(!ready1.is_empty());
+        assert!(list.pop_back().unwrap().val == 3);
+        assert!(list.pop_back().unwrap().val == 2);
+        assert!(list.pop_back().unwrap().val == 1);
+        assert!(list.pop_back().unwrap().val == 0);
+        list.push_back(Box::<IntNode>::new(IntNode::new(0)));
+        list.push_back(Box::<IntNode>::new(IntNode::new(1)));
+        assert!(list.pop_back().unwrap().val == 1);
+        assert!(list.pop_back().unwrap().val == 0);
 
-        ready0.push_back_all(&mut ready1);
-        assert!(!ready0.is_empty());
-        assert!(ready1.is_empty());
-
-        assert_eq!(unsafe { ready0.pop_front() }.unwrap(), pa);
-        assert_eq!(unsafe { ready0.pop_front() }.unwrap(), pb);
-        assert_eq!(unsafe { ready0.pop_front() }.unwrap(), pc);
-        assert!(ready0.is_empty());
-
-        unsafe { ready1.push_back(pa) };
-        // println!(" * * * ready1: {ready1:?}");
-        unsafe { ready1.push_back(pb) };
-        // println!(" * * * ready1: {ready1:?}");
-        unsafe { ready1.push_back(pc) };
-        // println!(" * * * ready1: {ready1:?}");
-        assert!(!ready1.is_empty());
-        ready0.push_back_all(&mut ready1);
-        assert!(!ready0.is_empty());
-        assert!(ready1.is_empty());
-        assert_eq!(unsafe { ready0.pop_front() }.unwrap(), pa);
-        assert_eq!(unsafe { ready0.pop_front() }.unwrap(), pb);
-        assert_eq!(unsafe { ready0.pop_front() }.unwrap(), pc);
-        assert!(ready0.is_empty());
-
-        unsafe { ready0.push_back(pa) };
-        assert!(!ready0.is_empty());
-        ready0.push_back_all(&mut ready1);
-        assert_eq!(unsafe { ready0.pop_front() }.unwrap(), pa);
-        assert!(ready0.is_empty());*/
+        assert!(list.is_empty());
+        list.push_back(Box::<IntNode>::new(IntNode::new(0)));
+        list.push_back(Box::<IntNode>::new(IntNode::new(1)));
+        assert!(!list.is_empty());
+        list.clear();
+        assert!(list.is_empty());
+        list.push_front(Box::<IntNode>::new(IntNode::new(0)));
+        list.push_front(Box::<IntNode>::new(IntNode::new(1)));
+        drop(list);
     }
 }
