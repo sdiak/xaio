@@ -299,8 +299,12 @@ mod test {
         let mut send1 = reveiver.new_buffered_sender(3);
         let t1 = std::thread::spawn(move || {
             send1.send_all(&mut SList::<IntNode>::new());
-            for i in 0..N_MSG {
+            send1.send_all(&mut SList::<IntNode>::from_node(IntNode::new(0i32)));
+            for i in 1..N_MSG {
                 send1.send_one(IntNode::new(i as i32));
+                if i == 2 {
+                    send1 = send1.clone();
+                }
             }
         });
 
@@ -319,7 +323,7 @@ mod test {
         for i in 0..N_MSG as i32 {
             assert_eq!(messages.pop_front().unwrap().val, i);
         }
-        t1.join();
+        t1.join().unwrap();
     }
     #[test]
     fn test_multi_thread() {

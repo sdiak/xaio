@@ -300,6 +300,29 @@ mod test {
         assert!(list2.pop_back().unwrap().val == 0);
         assert!(list2.pop_back().unwrap().val == -1);
 
+        list.push_back(Box::<IntNode>::new(IntNode::new(1)));
+        list.push_back(Box::<IntNode>::new(IntNode::new(2)));
+        list.push_back(Box::<IntNode>::new(IntNode::new(3)));
+        let mut list2 = SList::<IntNode>::from_node(Box::<IntNode>::new(IntNode::new(-1)));
+        list2.push_back(Box::<IntNode>::new(IntNode::new(0)));
+        list.prepend(&mut list2);
+        list.prepend(&mut SList::<IntNode>::new());
+        assert!(list2.is_empty());
+        let mut list3 = SList::<IntNode>::new();
+        assert!(list3.is_empty());
+        list3.prepend(&mut list);
+        assert!(list.is_empty());
+        assert!(!list3.is_empty());
+        list3.swap(&mut list);
+        assert!(!list.is_empty());
+        assert!(list3.is_empty());
+
+        assert!(list.pop_back().unwrap().val == 3);
+        assert!(list.pop_back().unwrap().val == 2);
+        assert!(list.pop_back().unwrap().val == 1);
+        assert!(list.pop_back().unwrap().val == 0);
+        assert!(list.pop_back().unwrap().val == -1);
+
         let mut list = SList::<IntNode>::from_node(Box::<IntNode>::new(IntNode::new(42)));
         let mut list2 = SList::<IntNode>::new();
         assert!(!list.is_empty());
