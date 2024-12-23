@@ -4,10 +4,10 @@ use std::{
     sync::Arc,
 };
 
-pub mod completion_queue;
+// pub mod completion_queue;
 mod io_req;
-pub mod io_req_fifo;
-pub mod io_req_lifo;
+// pub mod io_req_fifo;
+// pub mod io_req_lifo;
 pub mod sys;
 pub use io_req::*;
 
