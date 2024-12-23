@@ -5,13 +5,12 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use crate::sys::ThreadId;
+use crate::Unparker;
+use crate::{sys::ThreadId, Unpark};
 
 use super::{SLink, SList, SListNode};
 
 const PARK_BIT: usize = 1;
-
-pub type ParkerUnparkCb = unsafe extern "C" fn(thiz: NonNull<()>) -> ();
 
 pub struct Receiver<T: SListNode>(Arc<Inner<T>>, crate::PhantomUnsend, crate::PhantomUnsync);
 
@@ -28,18 +27,21 @@ impl<T: SListNode> Sender<T> {
     }
 }
 
+unsafe impl<T: SListNode> Send for Sender<T> {}
+unsafe impl<T: SListNode> Sync for Sender<T> {}
+
 impl<T: SListNode> Receiver<T> {
-    pub fn new(parker_unpark_cb: ParkerUnparkCb, parker: NonNull<()>) -> Result<Self> {
+    pub fn new(target: Unparker) -> Result<Self> {
+        use std::panic::AssertUnwindSafe;
         Ok(Self(
-            crate::catch_enomem(|| {
+            crate::catch_enomem(AssertUnwindSafe(move || {
                 Arc::new(Inner::<T> {
                     owner_thread_id: ThreadId::current(),
                     tail: AtomicUsize::new(0),
-                    parker_unpark_cb,
-                    parker,
+                    target,
                     _phantom: PhantomData {},
                 })
-            })?,
+            }))?,
             crate::PhantomUnsend {},
             crate::PhantomUnsync {},
         ))
@@ -54,15 +56,14 @@ impl<T: SListNode> Receiver<T> {
     }
 
     pub fn park_end(&self, dst: &mut SList<T>) -> usize {
-        self.0.park_begin(dst)
+        self.0.park_end(dst)
     }
 }
 
 struct Inner<T: SListNode> {
     owner_thread_id: ThreadId,
     tail: AtomicUsize,
-    parker_unpark_cb: ParkerUnparkCb,
-    parker: NonNull<()>,
+    target: Unparker,
     _phantom: PhantomData<T>,
 }
 impl<T: SListNode> Inner<T> {
@@ -85,7 +86,7 @@ impl<T: SListNode> Inner<T> {
             ) {
                 Ok(_) => {
                     if old_tail == PARK_BIT {
-                        unsafe { (self.parker_unpark_cb)(self.parker) };
+                        self.target.unpark();
                         return true;
                     }
                     return false;
@@ -103,10 +104,12 @@ impl<T: SListNode> Inner<T> {
             eprintln!("CompletionQueue::park_begin() can only be called from the owner thread");
             std::process::abort();
         }
+        // println!("old_tail={}", self.tail.load(Ordering::Relaxed));
         let old_tail = self.tail.swap(PARK_BIT, Ordering::Acquire);
         if old_tail == 0 {
             0
         } else {
+            // println!(" old_tail={old_tail}");
             debug_assert!(
                 old_tail != PARK_BIT,
                 "The park-bit can not be set at this stage"
@@ -151,5 +154,112 @@ impl<T: SListNode> Inner<T> {
             _phantom: PhantomData::<T> {},
         });
         len
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::thread::JoinHandle;
+
+    use super::*;
+
+    struct IntNode {
+        pub val: i32,
+        link: SLink,
+    }
+    impl IntNode {
+        fn new(val: i32) -> Box<Self> {
+            Box::new(Self {
+                val,
+                link: SLink::new(),
+            })
+        }
+    }
+    impl SListNode for IntNode {
+        fn offset_of_link() -> usize {
+            core::mem::offset_of!(IntNode, link)
+        }
+        fn drop(ptr: Box<Self>) {
+            drop(ptr);
+        }
+    }
+
+    #[derive(Clone)]
+    struct Thread(std::thread::Thread);
+    impl Unpark for Thread {
+        fn unpark(&self) {
+            self.0.unpark();
+            // println!("Unpark");
+        }
+    }
+    #[test]
+    fn test_single_thread() {
+        let me = Thread(std::thread::current());
+        let target = Unparker::new(me);
+        let reveiver: Receiver<IntNode> = Receiver::new(target).unwrap();
+
+        const N_MSG: usize = 1000;
+        let send1 = reveiver.new_sender();
+        let t1 = std::thread::spawn(move || {
+            for i in 0..N_MSG {
+                send1.send_one(IntNode::new(i as i32));
+            }
+        });
+
+        let mut messages = SList::<IntNode>::new();
+        let mut n_msg = 0;
+        while n_msg < N_MSG {
+            let n = reveiver.park_begin(&mut messages);
+            if n > 0 {
+                n_msg += n;
+            } else {
+                std::thread::park();
+            }
+            n_msg += reveiver.park_end(&mut messages);
+        }
+
+        for i in 0..N_MSG as i32 {
+            assert_eq!(messages.pop_front().unwrap().val, i);
+        }
+        t1.join();
+    }
+    #[test]
+    fn test_multi_thread() {
+        let me = Thread(std::thread::current());
+        let target = Unparker::new(me);
+        let reveiver: Receiver<IntNode> = Receiver::new(target).unwrap();
+
+        const N_THREAD: usize = 3;
+        const N_MSG_PER_THREAD: usize = 1000;
+        let mut threads = Vec::<JoinHandle<()>>::new();
+
+        for _ in 0..N_THREAD {
+            let send = reveiver.new_sender();
+            threads.push(std::thread::spawn(move || {
+                for i in 0..N_MSG_PER_THREAD {
+                    send.send_one(IntNode::new(i as i32));
+                }
+            }));
+        }
+
+        const N_MSG: usize = N_MSG_PER_THREAD * N_THREAD;
+        let mut messages = SList::<IntNode>::new();
+        let mut n_park = 0;
+        let mut n_msg = 0;
+        while n_msg < N_MSG {
+            let n = reveiver.park_begin(&mut messages);
+            if n > 0 {
+                n_msg += n;
+            } else {
+                std::thread::park();
+                n_park += 1;
+            }
+            n_msg += reveiver.park_end(&mut messages);
+        }
+
+        for t in threads {
+            t.join().unwrap();
+        }
+        println!("n_park={n_park}");
     }
 }

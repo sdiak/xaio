@@ -173,8 +173,6 @@ impl<T: SListNode> SList<T> {
 
 #[cfg(test)]
 mod test {
-    use std::{collections::LinkedList, ops::Deref};
-
     use super::*;
 
     struct IntNode {

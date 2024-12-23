@@ -1,4 +1,8 @@
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
+use std::{
+    cell::Cell,
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
+    sync::Arc,
+};
 
 pub mod completion_queue;
 mod io_req;
@@ -27,6 +31,26 @@ macro_rules! pin_mut {
         #[allow(unused_mut)]
         let mut $var = unsafe { Pin::new_unchecked(&mut $var) };
     };
+}
+
+pub trait Unpark {
+    fn unpark(&self);
+}
+// #[derive(Clone)]
+pub struct Unparker {
+    target: Box<dyn Unpark>,
+}
+impl Unparker {
+    pub fn new<U: Unpark + std::panic::UnwindSafe + Send + Sync + Clone + 'static>(
+        target: U,
+    ) -> Self {
+        Self {
+            target: Box::new(target),
+        }
+    }
+    pub fn unpark(&self) {
+        self.target.unpark();
+    }
 }
 
 pub fn add(left: u64, right: u64) -> u64 {
