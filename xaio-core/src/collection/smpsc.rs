@@ -1,5 +1,6 @@
 use std::io::Result;
 use std::marker::PhantomData;
+use std::num::NonZero;
 use std::ptr::NonNull;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
@@ -18,37 +19,96 @@ pub struct Receiver<T: SListNode>(Arc<Inner<T>>, crate::PhantomUnsend, crate::Ph
 pub struct Sender<T: SListNode>(Arc<Inner<T>>);
 impl<T: SListNode> Sender<T> {
     #[inline(always)]
-    pub fn send_one(&self, node: Box<T>) -> bool {
+    pub fn send_one(&mut self, node: Box<T>) {
         self.send_all(&mut SList::from_node(node))
     }
     #[inline(always)]
-    pub fn send_all(&self, nodes: &mut SList<T>) -> bool {
-        self.0.append(nodes)
+    pub fn send_all(&mut self, nodes: &mut SList<T>) {
+        self.0.append(nodes);
     }
 }
-
 unsafe impl<T: SListNode> Send for Sender<T> {}
-unsafe impl<T: SListNode> Sync for Sender<T> {}
+
+pub struct BufferedSender<T: SListNode> {
+    receiver: Arc<Inner<T>>,
+    buffer: SList<T>,
+    buffered: usize,
+    max_buffered: NonZero<usize>,
+}
+impl<T: SListNode> Drop for BufferedSender<T> {
+    fn drop(&mut self) {
+        self.flush();
+    }
+}
+impl<T: SListNode> Clone for BufferedSender<T> {
+    fn clone(&self) -> Self {
+        Self::new(self.receiver.clone(), self.max_buffered)
+    }
+}
+impl<T: SListNode> BufferedSender<T> {
+    fn new(receiver: Arc<Inner<T>>, max_buffered: NonZero<usize>) -> Self {
+        Self {
+            receiver,
+            buffer: SList::new(),
+            buffered: 0,
+            max_buffered,
+        }
+    }
+    #[inline(always)]
+    pub fn flush(&mut self) {
+        self.receiver.append(&mut self.buffer);
+        self.buffered = 0;
+    }
+
+    #[inline(always)]
+    pub fn send_one(&mut self, node: Box<T>) {
+        self.buffer.push_front(node);
+        self.buffered += 1;
+        if self.buffered >= self.max_buffered.get() {
+            self.flush();
+        }
+    }
+
+    pub fn send_all(&mut self, nodes: &mut SList<T>) {
+        if !nodes.is_empty() {
+            self.buffer.prepend(nodes);
+            // Do not traverse nodes to get the length, just flush
+            self.flush();
+        }
+    }
+}
+unsafe impl<T: SListNode> Send for BufferedSender<T> {}
 
 impl<T: SListNode> Receiver<T> {
-    pub fn new(target: Unparker) -> Result<Self> {
+    #[cfg_attr(coverage, coverage(off))]
+    pub fn try_new(target: Unparker) -> Result<Self> {
         use std::panic::AssertUnwindSafe;
-        Ok(Self(
-            crate::catch_enomem(AssertUnwindSafe(move || {
-                Arc::new(Inner::<T> {
-                    owner_thread_id: ThreadId::current(),
-                    tail: AtomicUsize::new(0),
-                    target,
-                    _phantom: PhantomData {},
-                })
-            }))?,
+        Ok(crate::catch_enomem(AssertUnwindSafe(move || {
+            Self::new(target)
+        }))?)
+    }
+
+    pub fn new(target: Unparker) -> Self {
+        Self(
+            Arc::new(Inner::<T> {
+                owner_thread_id: ThreadId::current(),
+                tail: AtomicUsize::new(0),
+                target,
+                _phantom: PhantomData {},
+            }),
             crate::PhantomUnsend {},
             crate::PhantomUnsync {},
-        ))
+        )
     }
 
     pub fn new_sender(&self) -> Sender<T> {
         Sender(self.0.clone())
+    }
+
+    pub fn new_buffered_sender(&self, buffer_size_hint: usize) -> BufferedSender<T> {
+        let buffer_size =
+            NonZero::new(buffer_size_hint).unwrap_or(unsafe { NonZero::new_unchecked(1) });
+        BufferedSender::new(self.0.clone(), buffer_size)
     }
 
     pub fn park_begin(&self, dst: &mut SList<T>) -> usize {
@@ -98,40 +158,45 @@ impl<T: SListNode> Inner<T> {
         }
     }
 
-    fn park_begin(&self, dst: &mut SList<T>) -> usize {
+    #[inline]
+    #[cfg_attr(coverage, coverage(off))]
+    fn check_current_thread(&self, method: &str) {
         if self.owner_thread_id != ThreadId::current() {
             // Mostly for c-binding
-            eprintln!("CompletionQueue::park_begin() can only be called from the owner thread");
+            eprintln!(
+                "xaio-core::collection::smpsc::Receiver::{} can only be called from the owner thread",
+                method
+            );
             std::process::abort();
         }
+    }
+    #[inline]
+    #[cfg_attr(coverage, coverage(off))]
+    fn check_park_bit(&self, old_tail: usize) {
+        debug_assert!(
+            old_tail != PARK_BIT,
+            "The park-bit can not be set at this stage"
+        );
+    }
+    fn park_begin(&self, dst: &mut SList<T>) -> usize {
+        self.check_current_thread("park_begin()");
         // println!("old_tail={}", self.tail.load(Ordering::Relaxed));
         let old_tail = self.tail.swap(PARK_BIT, Ordering::Acquire);
         if old_tail == 0 {
             0
         } else {
             // println!(" old_tail={old_tail}");
-            debug_assert!(
-                old_tail != PARK_BIT,
-                "The park-bit can not be set at this stage"
-            );
+            self.check_park_bit(old_tail);
             Self::reverse_list(old_tail as _, dst)
         }
     }
 
     fn park_end(&self, dst: &mut SList<T>) -> usize {
-        if self.owner_thread_id != ThreadId::current() {
-            // Mostly for c-binding
-            eprintln!("CompletionQueue::park_end() can only be called from the owner thread");
-            std::process::abort();
-        }
+        self.check_current_thread("park_end()");
         let old_tail = self.tail.swap(0, Ordering::Acquire);
-        if old_tail == PARK_BIT {
+        if old_tail <= PARK_BIT {
             0
         } else {
-            debug_assert!(
-                old_tail != 0,
-                "The park-bit is either set or the queue is not empty"
-            );
             Self::reverse_list(old_tail as _, dst)
         }
     }
@@ -196,11 +261,44 @@ mod test {
     fn test_single_thread() {
         let me = Thread(std::thread::current());
         let target = Unparker::new(me);
-        let reveiver: Receiver<IntNode> = Receiver::new(target).unwrap();
+        let reveiver: Receiver<IntNode> = Receiver::try_new(target).unwrap();
 
         const N_MSG: usize = 1000;
-        let send1 = reveiver.new_sender();
+        let mut send1 = reveiver.new_sender();
         let t1 = std::thread::spawn(move || {
+            send1.send_all(&mut SList::<IntNode>::new());
+            for i in 0..N_MSG {
+                send1.send_one(IntNode::new(i as i32));
+            }
+        });
+
+        let mut messages = SList::<IntNode>::new();
+        let mut n_msg = 0;
+        while n_msg < N_MSG {
+            let n = reveiver.park_begin(&mut messages);
+            if n > 0 {
+                n_msg += n;
+            } else {
+                std::thread::park();
+            }
+            n_msg += reveiver.park_end(&mut messages);
+        }
+
+        for i in 0..N_MSG as i32 {
+            assert_eq!(messages.pop_front().unwrap().val, i);
+        }
+        t1.join();
+    }
+    #[test]
+    fn test_single_thread_batch() {
+        let me = Thread(std::thread::current());
+        let target = Unparker::new(me);
+        let reveiver: Receiver<IntNode> = Receiver::try_new(target).unwrap();
+
+        const N_MSG: usize = 1000;
+        let mut send1 = reveiver.new_buffered_sender(3);
+        let t1 = std::thread::spawn(move || {
+            send1.send_all(&mut SList::<IntNode>::new());
             for i in 0..N_MSG {
                 send1.send_one(IntNode::new(i as i32));
             }
@@ -227,14 +325,14 @@ mod test {
     fn test_multi_thread() {
         let me = Thread(std::thread::current());
         let target = Unparker::new(me);
-        let reveiver: Receiver<IntNode> = Receiver::new(target).unwrap();
+        let reveiver: Receiver<IntNode> = Receiver::try_new(target).unwrap();
 
         const N_THREAD: usize = 3;
         const N_MSG_PER_THREAD: usize = 1000;
         let mut threads = Vec::<JoinHandle<()>>::new();
 
         for _ in 0..N_THREAD {
-            let send = reveiver.new_sender();
+            let mut send = reveiver.new_sender();
             threads.push(std::thread::spawn(move || {
                 for i in 0..N_MSG_PER_THREAD {
                     send.send_one(IntNode::new(i as i32));

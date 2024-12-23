@@ -126,6 +126,29 @@ impl<T: SListNode> SList<T> {
         self.tail = new_tail;
     }
 
+    pub fn swap(&mut self, other: &mut SList<T>) {
+        let other_tail = other.tail;
+        let other_head = other.head;
+        other.tail = self.tail;
+        other.head = self.head;
+        self.tail = other_tail;
+        self.head = other_head;
+    }
+
+    pub fn prepend(&mut self, other: &mut SList<T>) {
+        if other.is_empty() {
+            return;
+        }
+        if self.tail.is_null() {
+            self.tail = other.tail;
+        } else {
+            unsafe { (*other.tail).list_update_next(self.head, Ordering::Relaxed) };
+        }
+        self.head = other.head;
+        other.head = std::ptr::null_mut();
+        other.tail = std::ptr::null_mut();
+    }
+
     pub fn append(&mut self, other: &mut SList<T>) {
         if other.is_empty() {
             return;

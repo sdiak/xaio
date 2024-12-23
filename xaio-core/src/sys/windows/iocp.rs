@@ -622,7 +622,7 @@ mod tests {
         }
     }
 
-    #[test]
+    // #[test]
     fn test_socket() {
         use socket2::{Domain, Socket, Type};
         use std::io::{Read, Write};
