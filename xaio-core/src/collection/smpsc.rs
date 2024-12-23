@@ -289,6 +289,7 @@ mod test {
         }
         t1.join();
     }
+
     #[test]
     fn test_single_thread_batch() {
         let me = Thread(std::thread::current());
