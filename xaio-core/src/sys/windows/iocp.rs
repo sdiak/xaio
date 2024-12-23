@@ -239,7 +239,7 @@ impl IoCompletionPort {
         }
     }
     #[inline(always)]
-    pub fn attach_socket(&self, socket: super::RawSocket, token: usize) -> Result<()> {
+    pub fn attach_socket(&self, socket: super::RawSd, token: usize) -> Result<()> {
         self.attach_file(socket as _, token)
     }
 
@@ -348,7 +348,7 @@ impl IoCompletionPort {
 
     pub fn recvv(
         &self,
-        socket: super::RawSocket,
+        socket: super::RawSd,
         buffers: &mut [WSABUF],
         overlapped: *mut Overlapped,
     ) -> Result<()> {
@@ -383,7 +383,7 @@ impl IoCompletionPort {
     }
     pub fn recv(
         &self,
-        socket: super::RawSocket,
+        socket: super::RawSd,
         buffer: &mut [u8],
         overlapped: *mut Overlapped,
     ) -> Result<()> {
@@ -396,7 +396,7 @@ impl IoCompletionPort {
     }
     pub fn sendv(
         &self,
-        socket: super::RawSocket,
+        socket: super::RawSd,
         buffers: &[WSABUF],
         overlapped: *mut Overlapped,
     ) -> Result<()> {
@@ -431,7 +431,7 @@ impl IoCompletionPort {
     }
     pub fn send(
         &self,
-        socket: super::RawSocket,
+        socket: super::RawSd,
         buffer: &[u8],
         overlapped: *mut Overlapped,
     ) -> Result<()> {

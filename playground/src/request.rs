@@ -10,7 +10,7 @@ pub(super) const UNKNOWN: i32 = i32::MIN + 1;
 pub(super) const FLAG_INITIALIZED: u32 = 1u32 << 8;
 pub(super) const FLAG_NEED_DROP: u32 = 1u32 << 9;
 pub(super) const FLAG_CONCURRENT: u32 = 1u32 << 10;
-pub(super) const FLAG_RING_OWNED: u32 = 1u32 << 10;
+pub(super) const FLAG_RING_OWNED: u32 = 1u32 << 11;
 
 #[repr(u8)]
 #[allow(non_camel_case_types, clippy::upper_case_acronyms)]

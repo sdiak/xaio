@@ -5,13 +5,20 @@ use std::{
 };
 
 // pub mod completion_queue;
+pub mod io_driver;
 mod io_req;
 // pub mod io_req_fifo;
 // pub mod io_req_lifo;
 pub mod sys;
 pub use io_req::*;
 
+mod completion_port;
+pub use completion_port::*;
+
 pub mod collection;
+
+mod io_buf;
+pub use io_buf::*;
 
 pub type PhantomUnsync = std::marker::PhantomData<std::cell::Cell<()>>;
 pub type PhantomUnsend = std::marker::PhantomData<std::sync::MutexGuard<'static, ()>>;

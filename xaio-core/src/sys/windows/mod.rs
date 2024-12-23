@@ -6,10 +6,10 @@ use std::{
 
 use windows_sys::Win32::Foundation::HANDLE;
 
-pub type RawSocket = std::os::windows::raw::SOCKET;
+pub type RawSd = std::os::windows::raw::SOCKET;
 pub type RawFd = std::os::windows::raw::HANDLE;
 
-pub const INVALID_RAW_SOCKET: RawSocket = -1 as _;
+pub const INVALID_RAW_SD: RawSd = -1 as _;
 pub const INVALID_RAW_FD: RawFd = usize::MAX as _;
 
 pub mod ioutils;

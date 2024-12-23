@@ -24,8 +24,8 @@ pub(crate) fn close_handle_log_on_error(handle: super::RawFd) {
     }
 }
 
-pub(crate) fn close_socket_log_on_error(socket: super::RawSocket) {
-    if socket != super::INVALID_RAW_SOCKET
+pub(crate) fn close_socket_log_on_error(socket: super::RawSd) {
+    if socket != super::INVALID_RAW_SD
         && unsafe { windows_sys::Win32::Networking::WinSock::closesocket(socket as _) } == 0
     {
         log::warn!(

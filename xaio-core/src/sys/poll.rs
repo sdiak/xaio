@@ -13,7 +13,7 @@ cfg_if::cfg_if! {
     }
 }
 
-use super::RawSocket;
+use super::RawSd;
 
 #[repr(transparent)]
 #[derive(Clone, Copy)]
@@ -47,7 +47,7 @@ bitflags::bitflags! {
 
 impl PollFd {
     #[inline]
-    pub fn new(fd: RawSocket, events: Event) -> Self {
+    pub fn new(fd: RawSd, events: Event) -> Self {
         Self(RawPollFd {
             fd: fd as _,
             events: events.bits(),
@@ -56,8 +56,8 @@ impl PollFd {
     }
 
     #[inline(always)]
-    pub fn fd(&self) -> RawSocket {
-        self.0.fd as RawSocket
+    pub fn fd(&self) -> RawSd {
+        self.0.fd as RawSd
     }
 
     #[inline(always)]
@@ -76,7 +76,7 @@ impl PollFd {
     }
 
     #[inline(always)]
-    pub fn enable(&mut self, fd: RawSocket, interests: Event) {
+    pub fn enable(&mut self, fd: RawSd, interests: Event) {
         self.0.fd = fd as _;
         self.0.events = interests.bits();
         self.0.revents = 0;
@@ -84,7 +84,7 @@ impl PollFd {
 
     #[inline(always)]
     pub fn disable(&mut self) {
-        self.0.fd = super::INVALID_RAW_SOCKET as _;
+        self.0.fd = super::INVALID_RAW_SD as _;
     }
 
     #[inline(always)]
@@ -93,7 +93,7 @@ impl PollFd {
             if #[cfg(target_family = "unix")] {
                 self.0.fd < 0
             } else if #[cfg(target_family = "windows")] {
-                self.0.fd == super::INVALID_RAW_SOCKET as _
+                self.0.fd == super::INVALID_RAW_SD as _
             }
         }
     }
@@ -103,7 +103,7 @@ impl Default for PollFd {
     #[inline(always)]
     fn default() -> Self {
         Self(RawPollFd {
-            fd: super::INVALID_RAW_SOCKET as _,
+            fd: super::INVALID_RAW_SD as _,
             events: 0,
             revents: 0,
         })

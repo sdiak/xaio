@@ -26,6 +26,10 @@ impl<T: SListNode> Sender<T> {
     pub fn send_all(&mut self, nodes: &mut SList<T>) {
         self.0.append(nodes);
     }
+    #[inline(always)]
+    pub fn flush(&mut self) -> usize {
+        0
+    }
 }
 unsafe impl<T: SListNode> Send for Sender<T> {}
 
@@ -55,9 +59,11 @@ impl<T: SListNode> BufferedSender<T> {
         }
     }
     #[inline(always)]
-    pub fn flush(&mut self) {
+    pub fn flush(&mut self) -> usize {
+        let buffered = self.buffered;
         self.receiver.append(&mut self.buffer);
         self.buffered = 0;
+        buffered
     }
 
     #[inline(always)]
