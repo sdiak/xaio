@@ -1,4 +1,4 @@
-// use libc::{kevent, EV_ADD, EV_DELETE, EV_ERROR, EV_RECEIPT, EV_CLEAR, EVFILT_USER, NOTE_TRIGGER};
+// use libc::{kevent, EV_ADD, EV_DELETE, EV_ERROR, EV_RECEIPT, EV_CLEAR, EVFILT_USER, EVFILT_READ, NOTE_TRIGGER};
 pub struct kevent {
     /// Identifier for this event (often a file descriptor)
     ident: libc::uintptr_t,
@@ -14,6 +14,7 @@ pub const EV_DELETE: u16 = 0x2;
 pub const EV_ERROR: u16 = 0x4000;
 pub const EV_RECEIPT: u16 = 0x40;
 pub const EV_CLEAR: u16 = 0x20;
+pub const EVFILT_READ: i16 = -1;
 pub const EVFILT_USER: i16 = -10;
 pub const NOTE_TRIGGER: u32 = 0x01000000;
 
@@ -107,7 +108,7 @@ impl KQueue {
             if ev.data != 0 {
                 Err(Error::from_raw_os_error(ev.data as _))
             } else {
-                Err(Error::from(ErrorKind::Other))
+                Ok(())
             }
         } else {
             Err(Error::last_os_error())
@@ -120,9 +121,19 @@ impl KQueue {
                 self.__evfilt_user(0)?;
                 Ok(self)
             } else {
-                // TODO:
-                Err(Error::from(ErrorKind::Unsupported))
-                FIXME:
+                let mut ev = kevent_new!(self.1, EVFILT_READ, EV_ADD | EV_RECEIPT | EV_CLEAR, WAKE_TOKEN);
+                let status = unsafe { kevent(self.0, &ev, 1, &mut ev, 1, std::ptr::null()) };
+                if status >= 0 && (ev.flags & EV_ERROR) == 0 {
+                    Ok(self)
+                } else if status >= 0 {
+                    if ev.data != 0 {
+                        Err(Error::from_raw_os_error(ev.data as _))
+                    } else {
+                        Ok(self)
+                    }
+                } else {
+                    Err(Error::last_os_error())
+                }
             }
         }
     }
