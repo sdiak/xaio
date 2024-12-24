@@ -1,5 +1,5 @@
 use super::ioutils::{close_log_on_error, dup, read_all, write_all};
-use crate::sys::{self, Event, PollFd};
+use crate::sys::{self, PollEvent, PollFd};
 
 use std::{
     fmt::Debug,
@@ -70,7 +70,7 @@ impl EventFd {
         let fd = self.handle;
         let mut buffer = 0u64.to_ne_bytes();
 
-        let pollfd = &mut [PollFd::new(fd, Event::IN)];
+        let pollfd = &mut [PollFd::new(fd, PollEvent::IN)];
         loop {
             match read_all(fd, &mut buffer, false) {
                 Ok(_) => {

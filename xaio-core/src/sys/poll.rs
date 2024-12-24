@@ -13,6 +13,8 @@ cfg_if::cfg_if! {
     }
 }
 
+use crate::PollFlag;
+
 use super::RawSd;
 
 #[repr(transparent)]
@@ -30,7 +32,7 @@ cfg_if::cfg_if! {
 bitflags::bitflags! {
     /// Represents a set of input and output flags for poll.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub struct Event: i16 {
+    pub struct PollEvent: i16 {
         /// Readable interests or event.
         const IN = POLLIN;
         /// Writable interests or event.
@@ -47,12 +49,16 @@ bitflags::bitflags! {
 
 impl PollFd {
     #[inline]
-    pub fn new(fd: RawSd, events: Event) -> Self {
+    pub fn new(fd: RawSd, events: PollEvent) -> Self {
         Self(RawPollFd {
             fd: fd as _,
             events: events.bits(),
             revents: 0 as _,
         })
+    }
+    #[inline]
+    pub fn from_interests(fd: RawSd, interests: PollFlag) -> Self {
+        Self::new(fd, interests_to_events(interests))
     }
 
     #[inline(always)]
@@ -61,22 +67,30 @@ impl PollFd {
     }
 
     #[inline(always)]
-    pub fn events(&self) -> Event {
-        Event::from_bits_truncate(self.0.events)
+    pub fn events(&self) -> PollEvent {
+        PollEvent::from_bits_truncate(self.0.events)
     }
 
     #[inline(always)]
-    pub fn revents(&self) -> Event {
-        Event::from_bits_truncate(self.0.revents)
+    pub fn revents(&self) -> PollEvent {
+        PollEvent::from_bits_truncate(self.0.revents)
+    }
+    #[inline(always)]
+    pub fn rinterests(self) -> PollFlag {
+        revents_to_interests(PollEvent::from_bits_truncate(self.0.revents))
     }
 
     #[inline(always)]
-    pub fn set_events(&mut self, events: Event) {
+    pub fn set_events(&mut self, events: PollEvent) {
         self.0.events = events.bits();
     }
+    #[inline(always)]
+    pub fn set_interests(&mut self, interests: PollFlag) {
+        self.set_events(interests_to_events(interests));
+    }
 
     #[inline(always)]
-    pub fn enable(&mut self, fd: RawSd, interests: Event) {
+    pub fn enable(&mut self, fd: RawSd, interests: PollEvent) {
         self.0.fd = fd as _;
         self.0.events = interests.bits();
         self.0.revents = 0;
@@ -148,4 +162,37 @@ pub fn poll(pfd: &mut [PollFd], timeout: libc::c_int) -> Result<usize> {
             }
         }
     }
+}
+
+pub fn interests_to_events(interests: PollFlag) -> PollEvent {
+    let mut events = PollEvent::from_bits_retain(0);
+    if interests.contains(PollFlag::READABLE) {
+        events |= PollEvent::IN;
+    }
+    if interests.contains(PollFlag::WRITABLE) {
+        events |= PollEvent::OUT;
+    }
+    if interests.contains(PollFlag::PRIORITY) {
+        events |= PollEvent::PRI;
+    }
+    events
+}
+pub fn revents_to_interests(revents: PollEvent) -> PollFlag {
+    let mut interests = PollFlag::from_bits_retain(0);
+    if revents.contains(PollEvent::IN) {
+        interests |= PollFlag::READABLE;
+    }
+    if revents.contains(PollEvent::OUT) {
+        interests |= PollFlag::WRITABLE;
+    }
+    if revents.contains(PollEvent::PRI) {
+        interests |= PollFlag::PRIORITY;
+    }
+    if revents.contains(PollEvent::ERR) {
+        interests |= PollFlag::ERROR;
+    }
+    if revents.contains(PollEvent::HUP) {
+        interests |= PollFlag::HANG_UP;
+    }
+    interests
 }

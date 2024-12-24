@@ -12,6 +12,15 @@ pub type RawFd = std::os::windows::raw::HANDLE;
 pub const INVALID_RAW_SD: RawSd = -1 as _;
 pub const INVALID_RAW_FD: RawFd = usize::MAX as _;
 
+#[inline(always)]
+pub fn raw_sd_is_valid(sd: RawSd) -> bool {
+    sd != INVALID_RAW_SD
+}
+#[inline(always)]
+pub fn raw_fd_is_valid(sd: RawFd) -> bool {
+    sd != INVALID_RAW_FD
+}
+
 pub mod ioutils;
 
 pub mod event;

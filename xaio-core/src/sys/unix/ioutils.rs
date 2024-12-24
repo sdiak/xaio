@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use crate::sys::{poll, Event, PollFd};
+use crate::sys::{poll, PollEvent, PollFd};
 use log;
 use std::fs::File;
 use std::io::{Error, ErrorKind, Read, Result, Write};
@@ -18,7 +18,7 @@ pub(crate) fn read_all(fd: libc::c_int, buf: &mut [u8], block_on_eagain: bool) -
             Err(e) => match e.kind() {
                 ErrorKind::WouldBlock => {
                     if block_on_eagain {
-                        let pollfd = &mut [PollFd::new(fd, Event::IN)];
+                        let pollfd = &mut [PollFd::new(fd, PollEvent::IN)];
                         poll(pollfd, 5000)?;
                     } else {
                         return Err(e);
@@ -49,7 +49,7 @@ pub(crate) fn read(fd: libc::c_int, buf: &mut [u8], block_on_eagain: bool) -> Re
             Err(e) => match e.kind() {
                 ErrorKind::WouldBlock => {
                     if block_on_eagain && done == 0 {
-                        let pollfd = &mut [PollFd::new(fd, Event::IN)];
+                        let pollfd = &mut [PollFd::new(fd, PollEvent::IN)];
                         poll(pollfd, 5000)?;
                     } else if done != 0 {
                         return Ok(done);
@@ -79,7 +79,7 @@ pub(crate) fn write_all(fd: libc::c_int, buf: &[u8], block_on_eagain: bool) -> R
             Err(e) => match e.kind() {
                 ErrorKind::WouldBlock => {
                     if block_on_eagain {
-                        let pollfd = &mut [PollFd::new(fd, Event::OUT)];
+                        let pollfd = &mut [PollFd::new(fd, PollEvent::OUT)];
                         poll(pollfd, 5000)?;
                     } else {
                         return Err(e);

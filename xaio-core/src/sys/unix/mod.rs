@@ -3,6 +3,15 @@ pub type RawFd = std::os::fd::RawFd;
 pub const INVALID_RAW_SD: RawSd = -1;
 pub const INVALID_RAW_FD: RawFd = -1;
 
+#[inline(always)]
+pub fn raw_sd_is_valid(sd: RawSd) -> bool {
+    sd >= 0
+}
+#[inline(always)]
+pub fn raw_fd_is_valid(sd: RawFd) -> bool {
+    sd >= 0
+}
+
 pub mod ioutils;
 
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
