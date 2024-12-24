@@ -38,6 +38,8 @@ bitflags::bitflags! {
         const RDHUP = libc::EPOLLRDHUP;
 
         const EXCLUSIVE = libc::EPOLLEXCLUSIVE;
+
+        const EDGE_TRIGGERED = libc::EPOLLET;
     }
 }
 
@@ -84,7 +86,7 @@ impl EPoll {
         })
     }
 
-    fn ctl(&self, fd: RawFd, op: libc::c_int, events: Event, token: u64) -> Result<()> {
+    pub fn ctl(&self, fd: RawFd, op: libc::c_int, events: Event, token: u64) -> Result<()> {
         if token == WAKER_TOKEN && fd != self.waker.as_raw_fd() {
             return Err(Error::from(ErrorKind::InvalidInput));
         }

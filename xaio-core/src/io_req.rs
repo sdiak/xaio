@@ -1,6 +1,8 @@
+use crate::collection::SList;
 use crate::io_driver::IoDriver;
 use crate::sys::RawSd;
 use crate::{io_buf::IoBuf, CompletionPort};
+use crate::{CompletedIoReqSender, PollFlag};
 use std::{io::Result, mem::ManuallyDrop, ops::DerefMut, sync::atomic::Ordering};
 
 // pub type IoReqList = crate::collection::SList<xaio_req_s>;
@@ -34,6 +36,8 @@ pub enum OpCode {
     /// No operation
     NOOP, // **MUST** be first and `0`
 
+    /// Socket poll
+    POLL,
     /// Socket recv
     RECV,
     /// Socket send
@@ -64,7 +68,7 @@ pub struct IoReq {
     #[cfg(target_family = "windows")]
     _win_header: windows_sys::Win32::System::IO::OVERLAPPED,
     #[cfg(target_family = "unix")]
-    _unix_header: *const CompletionPort,
+    _unix_header: *const CompletedIoReqSender,
     collection_slink: crate::collection::SLink,
     status: std::sync::atomic::AtomicI32,
     pub(crate) flags_and_op_code: u32,
@@ -73,10 +77,14 @@ pub struct IoReq {
 
 #[repr(C)]
 pub(crate) struct SocketData {
-    buffer: IoBuf,
-    socket: RawSd,
-    done: u32,
-    todo: u32,
+    pub(crate) buffer: IoBuf,
+    pub(crate) socket: RawSd,
+    /// The interests
+    pub(crate) interests: PollFlag,
+    /// The events
+    pub(crate) events: PollFlag,
+    pub(crate) done: u32,
+    pub(crate) todo: u32,
 }
 
 #[repr(C)]
@@ -86,6 +94,7 @@ pub(crate) union IoReqData {
 
 impl IoReq {
     pub const STATUS_PENDING: i32 = i32::MIN;
+    pub const STATUS_OTHER: i32 = i32::MIN + 1;
 
     pub fn new() -> Box<Self> {
         Box::new(Self::default())
@@ -98,6 +107,12 @@ impl IoReq {
     #[inline(always)]
     pub fn opcode(&self) -> OpCode {
         OpCode::from(self.opcode_raw())
+    }
+
+    #[inline(always)]
+    pub fn is_a_socket_op(&self) -> bool {
+        let op = self.opcode_raw();
+        _OP_SOCKET_START_ <= op && op <= _OP_SOCKET_END_
     }
 
     #[inline(always)]
@@ -123,33 +138,42 @@ impl IoReq {
         self.flags_and_op_code = 0;
     }
 
-    pub(crate) fn completion_port<D: IoDriver>(&self) -> &'static CompletionPort {
+    pub(crate) fn completion_port(&self) -> &'static CompletedIoReqSender {
         cfg_if::cfg_if! {
             if #[cfg(target_os = "windows")] {
-                unsafe { &*(self._win_header.hEvent as *const CompletionPort) }
+                unsafe { &*(self._win_header.hEvent as *const CompletedIoReqSender) }
             } else {
                 unsafe { &*self._unix_header }
             }
         }
     }
 
-    fn __set_completion_port(&mut self, port: &'static CompletionPort) {
+    fn __set_completion_port(&mut self, port: &'static CompletedIoReqSender) {
         // assert!(!self.is_concurrent());
         // self.flags_and_op_code |= FLAG_CONCURRENT;
         cfg_if::cfg_if! {
             if #[cfg(target_os = "windows")] {
-                self._win_header.hEvent = port as *const CompletionPort as *mut libc::c_void;
+                self._win_header.hEvent = port as *const CompletedIoReqSender as *mut libc::c_void;
             } else {
                 self._unix_header = port as _;
             }
         }
     }
 
+    pub(crate) fn _complete(self: Box<Self>, status: i32) {
+        const _: () = assert!(IoReq::STATUS_OTHER == (IoReq::STATUS_PENDING + 1));
+        // IoReq::STATUS_PENDING becomes IoReq::STATUS_OTHER
+        let status = status + (status == IoReq::STATUS_PENDING) as i32;
+        self.status.store(status, Ordering::Release);
+        self.completion_port()
+            ._send_completed(&mut SList::from_node(self));
+    }
+
     #[inline(always)]
     fn __prep(&mut self, port: &'static CompletionPort, flags_and_op_code: u32) {
         self.flags_and_op_code = flags_and_op_code;
         self.collection_slink = crate::collection::SLink::new();
-        self.__set_completion_port(port);
+        // self.__set_completion_port(port);// FIXME:
     }
 
     #[inline]
@@ -206,7 +230,8 @@ impl Default for IoReq {
 }
 
 pub(crate) const OP_NOOP: u8 = OpCode::NOOP as _;
-pub(crate) const _OP_SOCKET_START_: u8 = OpCode::RECV as _;
+pub(crate) const _OP_SOCKET_START_: u8 = OpCode::POLL as _;
+pub(crate) const OP_POLL: u8 = OpCode::POLL as _;
 pub(crate) const OP_RECV: u8 = OpCode::RECV as _;
 pub(crate) const OP_SEND: u8 = OpCode::SEND as _;
 pub(crate) const _OP_SOCKET_END_: u8 = OpCode::SEND as _;

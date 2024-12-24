@@ -18,4 +18,7 @@ cfg_if::cfg_if! {
 #[cfg_attr(target_os = "linux", path = "io_driver_linux.rs")]
 pub mod io_driver;
 
+#[cfg_attr(target_os = "linux", path = "epoll_selector.rs")]
+pub mod selector;
+
 pub mod statx_impl;
