@@ -1,5 +1,6 @@
-use crate::io_buf::IoBuf;
+use crate::io_driver::IoDriver;
 use crate::sys::RawSd;
+use crate::{io_buf::IoBuf, CompletionPort};
 use std::{io::Result, mem::ManuallyDrop, ops::DerefMut, sync::atomic::Ordering};
 
 // pub type IoReqList = crate::collection::SList<xaio_req_s>;
@@ -63,7 +64,7 @@ pub struct IoReq {
     #[cfg(target_family = "windows")]
     _win_header: windows_sys::Win32::System::IO::OVERLAPPED,
     #[cfg(target_family = "unix")]
-    _unix_header: usize,
+    _unix_header: *const CompletionPort,
     collection_slink: crate::collection::SLink,
     status: std::sync::atomic::AtomicI32,
     pub(crate) flags_and_op_code: u32,
@@ -84,6 +85,8 @@ pub(crate) union IoReqData {
 }
 
 impl IoReq {
+    pub const STATUS_PENDING: i32 = i32::MIN;
+
     pub fn new() -> Box<Self> {
         Box::new(Self::default())
     }
@@ -120,32 +123,70 @@ impl IoReq {
         self.flags_and_op_code = 0;
     }
 
+    pub(crate) fn completion_port<D: IoDriver>(&self) -> &'static CompletionPort {
+        cfg_if::cfg_if! {
+            if #[cfg(target_os = "windows")] {
+                unsafe { &*(self._win_header.hEvent as *const CompletionPort) }
+            } else {
+                unsafe { &*self._unix_header }
+            }
+        }
+    }
+
+    fn __set_completion_port(&mut self, port: &'static CompletionPort) {
+        // assert!(!self.is_concurrent());
+        // self.flags_and_op_code |= FLAG_CONCURRENT;
+        cfg_if::cfg_if! {
+            if #[cfg(target_os = "windows")] {
+                self._win_header.hEvent = port as *const CompletionPort as *mut libc::c_void;
+            } else {
+                self._unix_header = port as _;
+            }
+        }
+    }
+
     #[inline(always)]
-    fn __prep(&mut self, flags_and_op_code: u32) {
+    fn __prep(&mut self, port: &'static CompletionPort, flags_and_op_code: u32) {
         self.flags_and_op_code = flags_and_op_code;
         self.collection_slink = crate::collection::SLink::new();
+        self.__set_completion_port(port);
     }
-    pub fn prep_recv(&mut self, socket: RawSd, buffer: IoBuf, len: u32) {
-        if self.flags_and_op_code != 0 {
-            self._release_resources();
-        }
-        self.__prep(FLAG_HAS_ONE_BUFFER | OP_RECV as u32);
+
+    #[inline]
+    fn __submit_send_or_recv(
+        mut self: Box<Self>,
+        port: &'static CompletionPort,
+        op_code: OpCode,
+        socket: RawSd,
+        buffer: IoBuf,
+        len: u32,
+    ) {
+        self.__prep(port, FLAG_HAS_ONE_BUFFER | op_code as u32);
         let socket_data = unsafe { self.op_data.socket.deref_mut() };
         socket_data.buffer = buffer;
         socket_data.socket = socket;
         socket_data.done = 0;
         socket_data.todo = len;
+        port.submit(self)
     }
-    pub fn prep_send(&mut self, socket: RawSd, buffer: IoBuf, len: u32) {
-        if self.flags_and_op_code != 0 {
-            self._release_resources();
-        }
-        self.__prep(FLAG_HAS_ONE_BUFFER | OP_SEND as u32);
-        let socket_data = unsafe { self.op_data.socket.deref_mut() };
-        socket_data.buffer = buffer;
-        socket_data.socket = socket;
-        socket_data.done = 0;
-        socket_data.todo = len;
+    pub fn recv(
+        self: Box<Self>,
+        port: &'static CompletionPort,
+        socket: RawSd,
+        buffer: IoBuf,
+        len: u32,
+    ) {
+        self.__submit_send_or_recv(port, OpCode::RECV, socket, buffer, len)
+    }
+
+    pub fn send(
+        self: Box<Self>,
+        port: &'static CompletionPort,
+        socket: RawSd,
+        buffer: IoBuf,
+        len: u32,
+    ) {
+        self.__submit_send_or_recv(port, OpCode::SEND, socket, buffer, len)
     }
 }
 

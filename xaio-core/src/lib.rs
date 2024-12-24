@@ -5,7 +5,6 @@ use std::{
 };
 
 // pub mod completion_queue;
-pub mod io_driver;
 mod io_req;
 // pub mod io_req_fifo;
 // pub mod io_req_lifo;
@@ -16,6 +15,8 @@ mod completion_port;
 pub use completion_port::*;
 
 pub mod collection;
+
+pub mod io_driver;
 
 mod io_buf;
 pub use io_buf::*;

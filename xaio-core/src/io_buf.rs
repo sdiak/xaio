@@ -50,3 +50,17 @@ impl IoBuf {
         unsafe { std::slice::from_raw_parts_mut(self.addr, self.len as _) }
     }
 }
+
+impl Drop for IoBuf {
+    fn drop(&mut self) {
+        if self.group_id == u16::MAX {
+            let layout = Layout::from_size_align(self.len(), BUFFER_ALIGN)
+                .expect("Validated by IoBuf::new()");
+            unsafe {
+                std::alloc::dealloc(self.addr, layout);
+            };
+        } else {
+            todo!()
+        }
+    }
+}

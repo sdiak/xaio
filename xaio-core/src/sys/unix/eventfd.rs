@@ -13,7 +13,7 @@ use std::{
 #[repr(C)]
 #[derive(Debug)]
 pub struct EventFd {
-    handle: sys::RawFd,
+    pub(crate) handle: sys::RawFd,
 }
 impl AsRawFd for EventFd {
     fn as_raw_fd(&self) -> std::os::unix::prelude::RawFd {

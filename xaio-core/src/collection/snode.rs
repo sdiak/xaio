@@ -1,3 +1,5 @@
+#![feature(associated_type_defaults)]
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub trait SListNode: Sized {
