@@ -11,6 +11,9 @@ mod io_req;
 pub mod sys;
 pub use io_req::*;
 
+mod op_code;
+pub use op_code::*;
+
 mod completion_port;
 pub use completion_port::*;
 

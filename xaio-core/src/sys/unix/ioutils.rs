@@ -3,7 +3,7 @@ use crate::sys::{poll, PollEvent, PollFd};
 use log;
 use std::fs::File;
 use std::io::{Error, ErrorKind, Read, Result, Write};
-use std::os::fd::FromRawFd;
+use std::os::fd::{FromRawFd, OwnedFd};
 use std::sync::{Mutex, MutexGuard};
 
 pub(crate) fn read_all(fd: libc::c_int, buf: &mut [u8], block_on_eagain: bool) -> Result<()> {
@@ -142,6 +142,12 @@ pub(crate) fn close_log_on_error(fd: libc::c_int) {
     }
 }
 
+pub(crate) fn pipe2(non_blocking: bool, close_on_exec: bool) -> Result<(OwnedFd, OwnedFd)> {
+    let (r, w) = libc_pipe2(non_blocking, close_on_exec)?;
+    Ok((unsafe { OwnedFd::from_raw_fd(r) }, unsafe {
+        OwnedFd::from_raw_fd(w)
+    }))
+}
 #[cfg(target_os = "linux")]
 pub(crate) fn libc_pipe2(
     non_blocking: bool,
@@ -163,7 +169,6 @@ pub(crate) fn libc_pipe2(
 }
 
 #[cfg(not(target_os = "linux"))]
-
 pub(crate) fn libc_pipe2(
     non_blocking: bool,
     close_on_exec: bool,
