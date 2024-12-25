@@ -1,3 +1,5 @@
+use socket2::Socket;
+
 use crate::io_driver::{IoDriver, TmpIoDriverSender};
 use crate::sys::io_driver;
 use crate::Unpark;
@@ -31,6 +33,14 @@ impl CompletionPort {
         }
     }
 
+    pub fn socket(
+        &self,
+        domain: crate::Domain,
+        ty: crate::Type,
+        protocol: Option<crate::Protocol>,
+    ) -> Result<Socket> {
+        todo!()
+    }
     pub fn submit(&self, prepared_request: Box<IoReq>) {
         self.inner_mut().submit(prepared_request)
     }
