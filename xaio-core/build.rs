@@ -26,6 +26,7 @@ fn has_kqueue(cx: &Context) -> bool {
 }
 
 fn autocfg() {
+    // https://doc.rust-lang.org/cargo/reference/environment-variables.html
     let cx = Context::new();
     has_kqueue(&cx);
 }
