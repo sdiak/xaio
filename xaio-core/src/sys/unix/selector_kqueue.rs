@@ -1,26 +1,7 @@
-// use libc::{kevent, EV_ADD, EV_DELETE, EV_ERROR, EV_RECEIPT, EV_CLEAR, EVFILT_USER, EVFILT_READ, NOTE_TRIGGER};
-pub struct kevent {
-    /// Identifier for this event (often a file descriptor)
-    ident: libc::uintptr_t,
-    filter: libc::c_short,
-    flags: libc::c_ushort,
-    fflags: libc::c_int,
-    data: libc::intptr_t,
-    udata: *mut libc::c_void,
-}
+use libc::{kevent, EVFILT_READ, EV_ADD, EV_CLEAR, EV_DELETE, EV_ERROR, EV_RECEIPT, NOTE_TRIGGER};
 
-pub const EV_ADD: u16 = 0x1;
-pub const EV_DELETE: u16 = 0x2;
-pub const EV_ERROR: u16 = 0x4000;
-pub const EV_RECEIPT: u16 = 0x40;
-pub const EV_CLEAR: u16 = 0x20;
-pub const EVFILT_READ: i16 = -1;
-pub const EVFILT_USER: i16 = -10;
-pub const NOTE_TRIGGER: u32 = 0x01000000;
-
-/*
-EVFILT_USER:
- */
+#[cfg(has_evfilt_user)]
+use libc::EVFILT_USER;
 
 use std::{
     io::{Error, ErrorKind, Result},
@@ -40,22 +21,8 @@ macro_rules! kevent_new {
 }
 const WAKE_TOKEN: usize = usize::MAX;
 
-unsafe extern "C" fn kevent(
-    kq: libc::c_int,
-    changelist: *const kevent,
-    nchanges: libc::c_int,
-    eventlist: *mut kevent,
-    nevents: libc::c_int,
-    timeout: *const libc::timespec,
-) -> libc::c_int {
-    -1
-}
-unsafe extern "C" fn kqueue() -> libc::c_int {
-    -1
-}
-
 cfg_if::cfg_if! {
-    if #[cfg(any(target_os = "freebsd", target_os = "macos" ))] {
+    if #[cfg(has_evfilt_user)] {
         pub struct KQueue(libc::c_int);
     } else {
         pub struct KQueue(libc::c_int, libc::c_int, libc::c_int);
@@ -81,7 +48,7 @@ impl KQueue {
         let kq = unsafe { kqueue() };
         if kq >= 0 {
             cfg_if::cfg_if! {
-                if #[cfg(any(target_os = "freebsd", target_os = "macos" ))] {
+                if #[cfg(has_evfilt_user)] {
                     Self(kq).__init()
                 } else {
                     if let Ok((r, w)) = super::ioutils::libc_pipe2(true, true) {
@@ -97,7 +64,7 @@ impl KQueue {
             Err(Error::last_os_error())
         }
     }
-    #[cfg(any(target_os = "freebsd", target_os = "macos"))]
+    #[cfg(has_evfilt_user)]
     fn __evfilt_user(&self, fflags: i32) -> Result<()> {
         let mut ev: kevent = kevent_new!(0, EVFILT_USER, EV_ADD | EV_RECEIPT, WAKE_TOKEN);
         ev.fflags = fflags as _;
@@ -117,11 +84,13 @@ impl KQueue {
     fn __init(self) -> Result<Self> {
         // Setup waker
         cfg_if::cfg_if! {
-            if #[cfg(any(target_os = "freebsd", target_os = "macos" ))] {
+            if #[cfg(has_evfilt_user)] {
                 self.__evfilt_user(0)?;
                 Ok(self)
             } else {
                 let mut ev = kevent_new!(self.1, EVFILT_READ, EV_ADD | EV_RECEIPT | EV_CLEAR, WAKE_TOKEN);
+                self.__raw_kevent(&ev, 1, &mut ev, 1, -1)?;
+
                 let status = unsafe { kevent(self.0, &ev, 1, &mut ev, 1, std::ptr::null()) };
                 if status >= 0 && (ev.flags & EV_ERROR) == 0 {
                     Ok(self)
@@ -139,7 +108,7 @@ impl KQueue {
     }
     pub fn try_clone(&self) -> Result<Self> {
         cfg_if::cfg_if! {
-            if #[cfg(any(target_os = "freebsd", target_os = "macos" ))] {
+            if #[cfg(has_evfilt_user)] {
                 Ok(Self(super::ioutils::dup(self.0)?))
             } else {
                 let mut err: Option<Error> = None;
@@ -158,7 +127,7 @@ impl KQueue {
     }
     pub fn wake(&self) -> Result<()> {
         cfg_if::cfg_if! {
-            if #[cfg(any(target_os = "freebsd", target_os = "macos" ))] {
+            if #[cfg(has_evfilt_user)] {
                 self.__evfilt_user(NOTE_TRIGGER as _)?;
                 Ok(self)
             } else {
@@ -168,13 +137,15 @@ impl KQueue {
         }
     }
 
-    pub fn kevent(
+    fn __raw_kevent(
         &self,
-        changes: &Vec<kevent>,
-        events: &mut Vec<kevent>,
+        changelist: *const kevent,
+        nchanges: usize,
+        eventlist: *mut kevent,
+        nevents: usize,
         timeout_ms: i32,
-    ) -> Result<()> {
-        if changes.len() > i32::MAX as _ || events.len() >= i32::MAX as _ {
+    ) -> Result<i32> {
+        if nchanges > i32::MAX as _ || nevents >= i32::MAX as _ {
             log::warn!(
                 "KQueue::submit_and_wait(...), vectors lengthes can not be greater than {}",
                 i32::MAX
@@ -192,28 +163,48 @@ impl KQueue {
             timeout_buffer.tv_nsec = ((timeout_ms % 1_000) * 1_000_000) as _;
             &timeout_buffer as *const libc::timespec
         };
-        // Make room for at least changes.len() event notifications
-        if events.capacity() < changes.len()
-            && events
-                .try_reserve(changes.len() - events.capacity())
-                .is_err()
-        {
-            return Err(Error::from(ErrorKind::OutOfMemory));
-        }
         let n_events = unsafe {
             kevent(
                 self.0,
-                changes.as_ptr(),
-                changes.len() as _,
-                events.as_mut_ptr(),
-                events.len() as _,
+                changelist,
+                nchanges as _,
+                eventlist,
+                nevents as _,
                 timeout,
             )
         };
         if n_events >= 0 {
-            Ok(())
+            Ok(n_events)
         } else {
-            Err(Error::last_os_error())
+            let err_code = super::last_os_error();
+            if err_code == libc::EINTR {
+                // https://man.freebsd.org/cgi/man.cgi?query=kqueue&sektion=2#end
+                // When  kevent()  call  fails  with  EINTR	 error,	 all  changes  in  the
+                // changelist have been applied.
+                Ok(0)
+            } else {
+                Err(Error::from_raw_os_error(err_code))
+            }
         }
+    }
+    pub fn kevent(
+        &self,
+        changes: &Vec<kevent>,
+        events: &mut Vec<kevent>,
+        timeout_ms: i32,
+    ) -> Result<()> {
+        // Make room for at least changes.len() event notifications
+        if events.try_reserve(changes.len()).is_err() {
+            return Err(Error::from(ErrorKind::OutOfMemory));
+        }
+        let initial_events_len = events.len();
+        self.__raw_kevent(
+            changes.as_ptr(),
+            changes.len(),
+            unsafe { events.as_mut_ptr().offset(initial_events_len as isize) },
+            events.capacity(),
+            timeout_ms,
+        )
+        .map(|nevents| unsafe { events.set_len(initial_events_len + nevents as usize) })
     }
 }
