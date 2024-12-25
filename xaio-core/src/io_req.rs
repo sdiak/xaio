@@ -77,15 +77,15 @@ pub struct IoReq {
     pub(crate) op_data: IoReqData,
 }
 
-#[repr(C)]
-pub(crate) struct PollCtl {
-    /// The socket
-    pub(crate) socket: crate::Socket,
-    /// The interests
-    pub(crate) interests: PollFlag,
-    /// The user provided token
-    pub(crate) token: usize,
-}
+// #[repr(C)]
+// pub(crate) struct PollCtl {
+//     /// The socket
+//     pub(crate) socket: crate::Socket,
+//     /// The interests
+//     pub(crate) interests: PollFlag,
+//     /// The user provided token
+//     pub(crate) token: usize,
+// }
 
 #[repr(C)]
 pub(crate) struct SocketData {

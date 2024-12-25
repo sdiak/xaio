@@ -7,13 +7,14 @@ use std::{
         Arc, Condvar, Mutex, MutexGuard,
     },
     task::Poll,
+    thread::JoinHandle,
 };
 
 use crate::{
     collection::{SLink, SList, SListNode},
     io_driver::IoDriverConfig,
     sys::raw_sd_is_valid,
-    IoReq, OpCode, OpCodeSet,
+    IoReq, OpCode, OpCodeSet, PollFlag,
 };
 
 use super::ioutils::{pipe2, write_all};
@@ -26,8 +27,15 @@ pub struct PollSocketInner {
     driver: Option<&'static Mutex<Inner>>,
     watchers: SList<IoReq>,
 }
-fn compute_interests(watchers: &SList<IoReq>) -> PollEvent {
-    todo!()
+fn compute_interests(watchers: &SList<IoReq>) -> PollFlag {
+    let mut flags = PollFlag::empty();
+    for watcher in watchers.iter() {
+        flags |= unsafe { watcher.op_data.socket.events };
+        if flags.contains(PollFlag::READABLE | PollFlag::WRITABLE | PollFlag::PRIORITY) {
+            return flags;
+        }
+    }
+    flags
 }
 impl Drop for PollSocketInner {
     fn drop(&mut self) {
@@ -35,6 +43,7 @@ impl Drop for PollSocketInner {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct PollDriver(Arc<Inner>);
 
 impl PollDriver {
@@ -48,7 +57,11 @@ impl PollDriver {
 
     pub fn new(config: &IoDriverConfig) -> Result<Self> {
         let inner = Inner::new(config.max_number_of_fd_hint)?;
-        Ok(Self(crate::catch_enomem(|| Arc::new(inner))?))
+        let inner = crate::catch_enomem(|| Arc::new(inner))?;
+        // let thiz = Self(crate::catch_enomem(|| Arc::new(inner))?);
+        let inner_4_poll_thread = inner.clone();
+        let _ = std::thread::spawn(move || inner_4_poll_thread.poll_thread());
+        Ok(Self(inner))
     }
     // pub(crate) fn bind_socket(&self, socket: &mut PollSocketInner) -> Result<()> {
     //     if socket.driver.is_some() {
@@ -60,43 +73,7 @@ impl PollDriver {
     //     Ok(())
     // }
     fn mutator_lock<F: FnOnce(&mut PollFds) -> Result<()>>(&self, mutate: F) -> Result<()> {
-        // Notify the poller thread that there is at least one mutator
-        let mut mutators_count = self.0.mutators_count.lock().expect("Unrecoverable error");
-        *mutators_count += 1;
-        if *mutators_count == 1 {
-            // I'm the first thread waiting to mutate the poll fds, stop the polling thread
-            self.0.wake();
-        }
-        // Grab the pollds lock and perform mutation
-        let result = {
-            let mut guard = self.0.pollfds.lock().expect("Unrecoverable error");
-            mutate(&mut *guard)
-        };
-        // Released the poll fds lock
-        if *mutators_count == 0 {
-            // I'm the laster thread that mutated the poll fds, resume the polling thread
-            self.0.mutators_cnd.notify_one();
-        }
-        result
-    }
-    fn poll_thread(&self) {
-        loop {
-            // Synchronize with mutators : wait for no mutator
-            let mut mutators_count = self.0.mutators_count.lock().expect("Unrecoverable error");
-            while *mutators_count > 0 {
-                mutators_count = self
-                    .0
-                    .mutators_cnd
-                    .wait(mutators_count)
-                    .expect("Unrecoverable error");
-            }
-            // Grab the lock
-            let pollfds = self.0.pollfds.lock().expect("Unrecoverable error");
-            // then release the mutator lock
-            drop(mutators_count);
-
-            todo!("Work")
-        }
+        self.0.mutator_lock(mutate)
     }
     pub fn wake(&self) {
         self.0.wake();
@@ -129,7 +106,7 @@ impl PollFds {
 
     fn add(&mut self, socket: &mut PollSocketInner) -> Result<()> {
         debug_assert!(raw_sd_is_valid(socket.socket.as_raw_fd() as _));
-        let interests = compute_interests(&socket.watchers);
+        let interests = crate::sys::interests_to_events(compute_interests(&socket.watchers));
         if self.len < self.pollfds.len() {
             // There is a free slot
             for i in 1..self.pollfds.len() {
@@ -189,6 +166,45 @@ impl Inner {
     fn wake(&self) {
         let buf = [1u8];
         write_all(self.waker.1.as_raw_fd(), &buf, true).expect("Unrecoverable error");
+    }
+    fn mutator_lock<F: FnOnce(&mut PollFds) -> Result<()>>(&self, mutate: F) -> Result<()> {
+        // Notify the poller thread that there is at least one mutator
+        let mut mutators_count = self.mutators_count.lock().expect("Unrecoverable error");
+        *mutators_count += 1;
+        if *mutators_count == 1 {
+            // I'm the first thread waiting to mutate the poll fds, stop the polling thread
+            self.wake();
+        }
+        // Grab the pollds lock and perform mutation
+        let result = {
+            let mut guard = self.pollfds.lock().expect("Unrecoverable error");
+            mutate(&mut *guard)
+        };
+        // Released the poll fds lock
+        if *mutators_count == 0 {
+            // I'm the laster thread that mutated the poll fds, resume the polling thread
+            self.mutators_cnd.notify_one();
+        }
+        result
+    }
+    fn poll_thread(&self) {
+        // TODO: catch end of life and exit
+        loop {
+            // Synchronize with mutators : wait for no mutator
+            let mut mutators_count = self.mutators_count.lock().expect("Unrecoverable error");
+            while *mutators_count > 0 {
+                mutators_count = self
+                    .mutators_cnd
+                    .wait(mutators_count)
+                    .expect("Unrecoverable error");
+            }
+            // Grab the lock
+            let pollfds = self.pollfds.lock().expect("Unrecoverable error");
+            // then release the mutator lock
+            drop(mutators_count);
+
+            todo!("Work")
+        }
     }
 }
 

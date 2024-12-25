@@ -192,6 +192,31 @@ impl<T: SListNode> SList<T> {
         }
         None
     }
+
+    pub fn iter<'a>(&'a self) -> SListIter<'a, T> {
+        SListIter {
+            pos: self.head,
+            _phantom: PhantomData {},
+        }
+    }
+}
+
+pub struct SListIter<'a, T: SListNode> {
+    pub(crate) pos: *const SLink,
+    pub(crate) _phantom: PhantomData<&'a T>,
+}
+impl<'a, T: SListNode> Iterator for SListIter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.pos.is_null() {
+            None
+        } else {
+            let current = self.pos;
+            self.pos = unsafe { (*current).list_get_next(Ordering::Relaxed) };
+            SLink::into_ref::<'a, T>(current)
+        }
+    }
 }
 
 #[cfg(test)]
