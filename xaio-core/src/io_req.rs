@@ -36,8 +36,10 @@ pub enum OpCode {
     /// No operation
     NOOP, // **MUST** be first and `0`
 
-    /// Socket poll
-    POLL,
+    /// Socket poll : adds a watcher (or updates it if it already exists)
+    POLL_CTL_ADD,
+    /// Socket poll : deletes a watcher
+    POLL_CTL_DEL,
     /// Socket recv
     RECV,
     /// Socket send
@@ -73,6 +75,16 @@ pub struct IoReq {
     status: std::sync::atomic::AtomicI32,
     pub(crate) flags_and_op_code: u32,
     pub(crate) op_data: IoReqData,
+}
+
+#[repr(C)]
+pub(crate) struct PollCtl {
+    /// The socket
+    pub(crate) socket: crate::Socket,
+    /// The interests
+    pub(crate) interests: PollFlag,
+    /// The user provided token
+    pub(crate) token: usize,
 }
 
 #[repr(C)]
@@ -230,8 +242,9 @@ impl Default for IoReq {
 }
 
 pub(crate) const OP_NOOP: u8 = OpCode::NOOP as _;
-pub(crate) const _OP_SOCKET_START_: u8 = OpCode::POLL as _;
-pub(crate) const OP_POLL: u8 = OpCode::POLL as _;
+pub(crate) const _OP_SOCKET_START_: u8 = OpCode::POLL_CTL_ADD as _;
+pub(crate) const OP_POLL_CTL_ADD: u8 = OpCode::POLL_CTL_ADD as _;
+pub(crate) const OP_POLL_CTL_DEL: u8 = OpCode::POLL_CTL_DEL as _;
 pub(crate) const OP_RECV: u8 = OpCode::RECV as _;
 pub(crate) const OP_SEND: u8 = OpCode::SEND as _;
 pub(crate) const _OP_SOCKET_END_: u8 = OpCode::SEND as _;

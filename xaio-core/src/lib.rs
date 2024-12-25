@@ -24,6 +24,9 @@ pub use poll_flags::*;
 mod io_buf;
 pub use io_buf::*;
 
+mod socket;
+pub use socket::*;
+
 pub type PhantomUnsync = std::marker::PhantomData<std::cell::Cell<()>>;
 pub type PhantomUnsend = std::marker::PhantomData<std::sync::MutexGuard<'static, ()>>;
 
