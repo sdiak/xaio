@@ -37,7 +37,7 @@ pub type PhantomUnsync = std::marker::PhantomData<std::cell::Cell<()>>;
 pub type PhantomUnsend = std::marker::PhantomData<std::sync::MutexGuard<'static, ()>>;
 
 mod r#async;
-pub(crate) use r#async::*;
+pub use r#async::*;
 
 fn catch_enomem<C, T>(constructor: C) -> std::io::Result<T>
 where

@@ -128,11 +128,11 @@ impl Async {
     }
 
     pub(crate) fn poll(&mut self, cx: &PollContext) -> Status {
-        if true {
-            // TODO: check still pending
+        let status = self.0.status.load(Ordering::Relaxed);
+        if status == Status::PENDING {
             unsafe { (self.0.vtable.poll)(self.0.as_mut() as *mut AsyncInner<Noop> as _, cx) }
         } else {
-            Status::new(0)
+            Status::new(status)
         }
     }
 }
