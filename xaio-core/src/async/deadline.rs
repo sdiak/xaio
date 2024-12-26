@@ -2,11 +2,11 @@ use crate::Status;
 
 use super::{AsyncData, PollContext};
 
-pub struct DeadlineData {
+pub struct AsyncDeadline {
     deadline: u64,
 }
 
-impl AsyncData for DeadlineData {
+impl AsyncData for AsyncDeadline {
     fn poll(&mut self, cx: &PollContext) -> Status {
         if self.deadline >= cx.now {
             Status::new(0)

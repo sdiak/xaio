@@ -6,7 +6,7 @@ use std::{
 };
 
 mod deadline;
-pub use deadline::DeadlineData;
+pub use deadline::AsyncDeadline;
 mod socket;
 pub use socket::*;
 

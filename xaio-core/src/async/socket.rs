@@ -9,14 +9,14 @@ const _MSG_DONTWAIT: libc::c_int = libc::MSG_DONTWAIT as _;
 #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
 const _MSG_DONTWAIT: libc::c_int = 0 as _;
 
-pub struct SendData {
+pub struct AsyncSend {
     pub socket: socket2::Socket, // TODO: driver socket ?
     pub buffer: crate::IoBuf,
     pub todo: i32,
     pub done: i32,
 }
 
-impl AsyncData for SendData {
+impl AsyncData for AsyncSend {
     fn poll(&mut self, _cx: &PollContext) -> Status {
         while self.todo < self.done {
             match self.socket.send_with_flags(
@@ -42,14 +42,14 @@ impl AsyncData for SendData {
     }
 }
 
-pub struct RecvData {
+pub struct AsyncRecv {
     pub socket: socket2::Socket, // TODO: driver socket ?
     pub buffer: crate::IoBuf,
     pub todo: i32,
     pub done: i32,
 }
 
-impl AsyncData for RecvData {
+impl AsyncData for AsyncRecv {
     fn poll(&mut self, _cx: &PollContext) -> Status {
         while self.todo < self.done {
             match self.socket.recv_with_flags(
