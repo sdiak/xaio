@@ -3,7 +3,7 @@ use crate::Status;
 use super::{AsyncData, PollContext};
 
 pub struct AsyncDeadline {
-    deadline: u64,
+    pub deadline: u64,
 }
 
 impl AsyncData for AsyncDeadline {
