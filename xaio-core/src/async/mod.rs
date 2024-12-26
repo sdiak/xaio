@@ -8,6 +8,7 @@ use std::{
 mod deadline;
 pub use deadline::AsyncDeadline;
 mod socket;
+use enum_dispatch::enum_dispatch;
 pub use socket::*;
 
 use crate::Status;
@@ -22,6 +23,47 @@ impl CompletionPort2 {
     }
 }
 
+#[enum_dispatch]
+trait MyTrait {
+    fn doSomething(&self) {}
+}
+#[repr(C, packed)]
+struct A {}
+
+#[repr(C, packed)]
+struct B {
+    u: u64,
+}
+
+#[repr(C, packed)]
+struct C {
+    u: u64,
+}
+
+impl MyTrait for A {}
+impl MyTrait for B {}
+impl MyTrait for C {}
+
+#[enum_dispatch(MyTrait)]
+#[repr(u8)]
+enum MyEnum {
+    A(A),
+    B(B),
+    C(C),
+}
+
+struct MyAsync {
+    i: u32,
+    z: u16,
+    y: u8,
+    u: MyEnum,
+}
+
+const _: () = assert!(
+    std::mem::size_of::<MyAsync>() == 16,
+    "assert_foo_equals_bar"
+);
+
 pub struct PollContext<'a> {
     now: u64,
     driver: &'a Driver,
@@ -31,9 +73,6 @@ pub struct PollContext<'a> {
 pub trait AsyncData: Sized {
     fn poll(&mut self, cx: &PollContext) -> Status;
 }
-
-pub type AsyncPoll<D: AsyncData> = fn(&mut D, &PollContext) -> Status;
-type AsyncDrop<D: AsyncData> = unsafe fn(*mut D) -> ();
 
 pub type Completion<D: AsyncData> = fn(D, Status);
 
@@ -113,14 +152,11 @@ impl Drop for Async {
 }
 
 impl Async {
-    pub(crate) fn new<D: AsyncData>(poll: AsyncPoll<D>, data: D) -> Option<Self> {
+    pub(crate) fn try_new<D: AsyncData>(data: D) -> Option<Self> {
         let thiz: *mut AsyncInner<D> =
             unsafe { std::alloc::alloc(AsyncInner::<D>::VTABLE.layout) } as _;
         if !thiz.is_null() {
             unsafe { thiz.write(AsyncInner::<D>::new(data)) };
-            // let dropper = |thiz: AsyncPoll<D>| {
-            //     drop(thiz);
-            // };
             Some(Self(unsafe { ManuallyDrop::new(Box::from_raw(thiz as _)) }))
         } else {
             None
