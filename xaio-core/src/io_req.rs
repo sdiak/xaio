@@ -98,6 +98,14 @@ pub(crate) struct SocketData {
     pub(crate) done: u32,
     pub(crate) todo: u32,
 }
+impl SocketData {
+    pub(crate) fn buffer(&mut self) -> &[u8] {
+        &self.buffer.as_slice()[(self.done as usize)..]
+    }
+    pub(crate) fn buffer_mut(&mut self) -> &mut [u8] {
+        &mut self.buffer.as_slice_mut()[(self.done as usize)..]
+    }
+}
 
 #[repr(C)]
 pub(crate) union IoReqData {
@@ -172,13 +180,16 @@ impl IoReq {
         }
     }
 
-    pub(crate) fn _complete(self: Box<Self>, status: i32) {
+    pub(crate) fn _set_status(self: &mut Self, status: i32) {
         const _: () = assert!(IoReq::STATUS_OTHER == (IoReq::STATUS_PENDING + 1));
         // IoReq::STATUS_PENDING becomes IoReq::STATUS_OTHER
         let status = status + (status == IoReq::STATUS_PENDING) as i32;
         self.status.store(status, Ordering::Release);
+    }
+    pub(crate) fn _complete(mut self: Box<Self>, status: i32) {
+        self._set_status(status);
         self.completion_port()
-            ._send_completed(&mut SList::from_node(self));
+            ._send_completed_list(&mut SList::from_node(self));
     }
 
     #[inline(always)]

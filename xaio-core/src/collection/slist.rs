@@ -89,6 +89,14 @@ impl<T: SListNode> SList<T> {
         self.head = new_head;
     }
 
+    fn pop_front_unchecked(&mut self) -> Box<T> {
+        let old_head = self.head;
+        self.head = unsafe { (*old_head).list_pop_next(Ordering::Relaxed) };
+        if self.head.is_null() {
+            self.tail = std::ptr::null_mut();
+        }
+        SLink::into::<T>(old_head)
+    }
     /// Removes and returns the front of the list when `!self.is_empty()`
     ///
     /// # Returns
@@ -97,13 +105,8 @@ impl<T: SListNode> SList<T> {
     /// # Complexity
     ///  * O(1)
     pub fn pop_front(&mut self) -> Option<Box<T>> {
-        let old_head = self.head;
-        if !old_head.is_null() {
-            self.head = unsafe { (*old_head).list_pop_next(Ordering::Relaxed) };
-            if self.head.is_null() {
-                self.tail = std::ptr::null_mut();
-            }
-            Some(SLink::into::<T>(old_head))
+        if !self.head.is_null() {
+            Some(self.pop_front_unchecked())
         } else {
             None
         }
@@ -198,6 +201,46 @@ impl<T: SListNode> SList<T> {
             pos: self.head,
             _phantom: PhantomData {},
         }
+    }
+
+    pub fn retain<F>(&mut self, mut f: F) -> SList<T>
+    where
+        F: FnMut(&mut T) -> bool,
+    {
+        let mut removed = SList::new();
+
+        // First deal with head removal
+        while let Some(head) = SLink::into_ref_mut::<T>(self.head) {
+            if f(head) {
+                break;
+            } else {
+                removed.push_back(self.pop_front_unchecked());
+            }
+        }
+        // Are their any nodes left ?
+        if self.head.is_null() {
+            self.tail = std::ptr::null_mut();
+            return removed;
+        }
+        // Process non-head nodes
+        let mut prev = self.head;
+        let mut it = unsafe { (*prev).list_get_next(Ordering::Relaxed) };
+        while let Some(mut node) = SLink::into_ref_mut::<T>(it) {
+            if !f(node) {
+                unsafe {
+                    (*prev)
+                        .list_update_next((*it).list_pop_next(Ordering::Relaxed), Ordering::Relaxed)
+                };
+                removed.push_back(unsafe { Box::from_raw(node as _) });
+                if it == self.tail {
+                    self.tail = prev;
+                }
+                it = prev;
+            }
+            prev = it;
+            it = unsafe { (*it).list_get_next(Ordering::Relaxed) };
+        }
+        removed
     }
 }
 

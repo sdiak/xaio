@@ -1,6 +1,6 @@
 use std::{
     io::{Error, ErrorKind, Result},
-    mem::offset_of,
+    mem::{offset_of, MaybeUninit},
     os::fd::{AsRawFd, OwnedFd},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -17,8 +17,16 @@ use crate::{
     IoReq, OpCode, OpCodeSet, PollFlag,
 };
 
-use super::ioutils::{pipe2, write_all};
+use super::{
+    io_error_to_errno_constant,
+    ioutils::{pipe2, write_all},
+};
 use super::{poll::PollFd, PollEvent, RawSd};
+
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+const _MSG_DONTWAIT: libc::c_int = libc::MSG_DONTWAIT as _;
+#[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+const _MSG_DONTWAIT: libc::c_int = 0 as _;
 
 pub struct PollSocketInner {
     /// The socket
@@ -27,16 +35,140 @@ pub struct PollSocketInner {
     driver: Option<&'static Mutex<Inner>>,
     watchers: SList<IoReq>,
 }
-fn compute_interests(watchers: &SList<IoReq>) -> PollFlag {
-    let mut flags = PollFlag::empty();
-    for watcher in watchers.iter() {
-        flags |= unsafe { watcher.op_data.socket.events };
-        if flags.contains(PollFlag::READABLE | PollFlag::WRITABLE | PollFlag::PRIORITY) {
-            return flags;
+impl PollSocketInner {
+    pub(crate) fn compute_interests(&self) -> PollFlag {
+        let all_events = PollFlag::READABLE | PollFlag::WRITABLE | PollFlag::PRIORITY;
+        let mut flags = PollFlag::empty();
+        for watcher in self.watchers.iter() {
+            flags |= unsafe { watcher.op_data.socket.events };
+            if flags.contains(all_events) {
+                return flags;
+            }
+        }
+        flags
+    }
+    pub(crate) fn process_events(&mut self, mut events: PollFlag) {
+        let mut poll_events = events;
+        let mut done = self.watchers.retain(|req| match req.opcode() {
+            OpCode::RECV => _socket_req_resume(
+                &self.socket,
+                req,
+                &mut poll_events,
+                &mut events,
+                _socket_req_resume_recv,
+            ),
+            OpCode::SEND => _socket_req_resume(
+                &self.socket,
+                req,
+                &mut poll_events,
+                &mut events,
+                _socket_req_resume_send,
+            ),
+            _ => {
+                req._set_status(-libc::ENOSYS);
+                false
+            }
+        });
+        // TODO: batch as a list per port ?
+        while let Some(req) = done.pop_front() {
+            req.completion_port()._send_completed(req);
         }
     }
-    flags
 }
+
+/// Perform the given operation `f`
+/// # Returns
+/// `true` when the request should be polled again
+fn _socket_req_resume<F>(
+    socket: &socket2::Socket,
+    req: &mut IoReq,
+    poll_events: &mut PollFlag,
+    events: &mut PollFlag,
+    f: F,
+) -> bool
+where
+    F: FnOnce(&socket2::Socket, &mut [u8], &mut PollFlag) -> i32,
+{
+    let op = unsafe { &mut *req.op_data.socket };
+    let buffer = op.buffer_mut();
+
+    let status = f(socket, buffer, events);
+    if status >= 0 {
+        op.done += status as u32;
+        if op.done >= op.todo {
+            // DONE: return the request to user
+            let status = op.done;
+            drop(op);
+            req._set_status(status as i32);
+            false
+        } else {
+            // Still some work to do
+            true
+        }
+    } else {
+        // No more data to read on the socket
+        *events &= !PollFlag::READABLE;
+        // No more data to write on the socket
+        *events &= !PollFlag::WRITABLE;
+        // Socket has error
+        *events |= PollFlag::ERROR;
+        *poll_events |= PollFlag::ERROR;
+        // DONE: return the request to user
+        req._set_status(status);
+        false
+    }
+}
+
+fn _socket_req_resume_recv(
+    socket: &socket2::Socket,
+    buffer: &mut [u8],
+    events: &mut PollFlag,
+) -> i32 {
+    let buffer = unsafe { std::mem::transmute::<&mut [u8], &mut [MaybeUninit<u8>]>(buffer) };
+    loop {
+        match socket.recv_with_flags(buffer, _MSG_DONTWAIT) {
+            Ok(len) => {
+                return len as i32;
+            }
+            Err(err) => match err.kind() {
+                ErrorKind::Interrupted => {}
+                ErrorKind::WouldBlock => {
+                    // No more data to read on the socket
+                    *events &= !PollFlag::READABLE;
+                    return 0;
+                }
+                _ => {
+                    return -io_error_to_errno_constant(&err);
+                }
+            },
+        }
+    }
+}
+fn _socket_req_resume_send(
+    socket: &socket2::Socket,
+    buffer: &mut [u8],
+    events: &mut PollFlag,
+) -> i32 {
+    loop {
+        match socket.send_with_flags(buffer, _MSG_DONTWAIT) {
+            Ok(len) => {
+                return len as i32;
+            }
+            Err(err) => match err.kind() {
+                ErrorKind::Interrupted => {}
+                ErrorKind::WouldBlock => {
+                    // No more data to read on the socket
+                    *events &= !PollFlag::WRITABLE;
+                    return 0;
+                }
+                _ => {
+                    return -io_error_to_errno_constant(&err);
+                }
+            },
+        }
+    }
+}
+
 impl Drop for PollSocketInner {
     fn drop(&mut self) {
         todo!(); // TODO: remove socket + cancel ops
@@ -51,14 +183,13 @@ impl PollDriver {
         OpCodeSet::new(&[OpCode::POLL_CTL_ADD, OpCode::POLL_CTL_DEL]);
 
     #[inline(always)]
-    fn supported_op_codes() -> &'static OpCodeSet {
+    pub const fn supported_op_codes() -> &'static OpCodeSet {
         &PollDriver::SUPPORTED_OP_CODES
     }
 
     pub fn new(config: &IoDriverConfig) -> Result<Self> {
         let inner = Inner::new(config.max_number_of_fd_hint)?;
         let inner = crate::catch_enomem(|| Arc::new(inner))?;
-        // let thiz = Self(crate::catch_enomem(|| Arc::new(inner))?);
         let inner_4_poll_thread = inner.clone();
         let _ = std::thread::spawn(move || inner_4_poll_thread.poll_thread());
         Ok(Self(inner))
@@ -72,9 +203,9 @@ impl PollDriver {
     //     }
     //     Ok(())
     // }
-    fn mutator_lock<F: FnOnce(&mut PollFds) -> Result<()>>(&self, mutate: F) -> Result<()> {
-        self.0.mutator_lock(mutate)
-    }
+    // fn mutator_lock<F: FnOnce(&mut PollFds) -> Result<()>>(&self, mutate: F) -> Result<()> {
+    //     self.0.mutator_lock(mutate)
+    // }
     pub fn wake(&self) {
         self.0.wake();
     }
@@ -106,7 +237,7 @@ impl PollFds {
 
     fn add(&mut self, socket: &mut PollSocketInner) -> Result<()> {
         debug_assert!(raw_sd_is_valid(socket.socket.as_raw_fd() as _));
-        let interests = crate::sys::interests_to_events(compute_interests(&socket.watchers));
+        let interests = crate::sys::interests_to_events(socket.compute_interests());
         if self.len < self.pollfds.len() {
             // There is a free slot
             for i in 1..self.pollfds.len() {
@@ -199,11 +330,26 @@ impl Inner {
                     .expect("Unrecoverable error");
             }
             // Grab the lock
-            let pollfds = self.pollfds.lock().expect("Unrecoverable error");
+            let mut pollfds = self.pollfds.lock().expect("Unrecoverable error");
             // then release the mutator lock
             drop(mutators_count);
 
-            todo!("Work")
+            match super::poll::poll(&mut pollfds.pollfds, -1) {
+                Ok(mut nevents) => {
+                    let mut i = 0;
+                    while nevents > 0 {
+                        if let Some(revents) = pollfds.pollfds[i].rinterests() {
+                            todo!("HAndle event");
+                            nevents -= 1;
+                        }
+                        i += 1;
+                    }
+                }
+                Err(e) => {
+                    eprintln!("libc::poll(...) failed: {}\nAborting ...", e);
+                    std::process::abort();
+                }
+            }
         }
     }
 }

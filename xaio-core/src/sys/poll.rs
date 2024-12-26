@@ -15,7 +15,7 @@ cfg_if::cfg_if! {
 
 use crate::PollFlag;
 
-use super::RawSd;
+use super::{raw_sd_is_valid, RawSd};
 
 #[repr(transparent)]
 #[derive(Clone, Copy)]
@@ -50,6 +50,11 @@ bitflags::bitflags! {
 impl PollFd {
     #[inline]
     pub fn new(fd: RawSd, events: PollEvent) -> Self {
+        let fd = if raw_sd_is_valid(fd) {
+            fd
+        } else {
+            super::INVALID_RAW_SD
+        };
         Self(RawPollFd {
             fd: fd as _,
             events: events.bits(),
@@ -72,12 +77,22 @@ impl PollFd {
     }
 
     #[inline(always)]
-    pub fn revents(&self) -> PollEvent {
-        PollEvent::from_bits_truncate(self.0.revents)
+    pub fn revents(&self) -> Option<PollEvent> {
+        if self.0.fd != super::INVALID_RAW_SD && self.0.revents != 0 {
+            Some(PollEvent::from_bits_truncate(self.0.revents))
+        } else {
+            None
+        }
     }
     #[inline(always)]
-    pub fn rinterests(self) -> PollFlag {
-        revents_to_interests(PollEvent::from_bits_truncate(self.0.revents))
+    pub fn rinterests(self) -> Option<PollFlag> {
+        if self.0.fd != super::INVALID_RAW_SD && self.0.revents != 0 {
+            Some(revents_to_interests(PollEvent::from_bits_truncate(
+                self.0.revents,
+            )))
+        } else {
+            None
+        }
     }
 
     #[inline(always)]

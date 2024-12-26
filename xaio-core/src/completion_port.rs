@@ -69,8 +69,11 @@ impl CompletedIoReqSender {
             }
         }
     }
-    pub(crate) fn _send_completed(&self, completed: &mut SList<IoReq>) {
+    pub(crate) fn _send_completed(&self, completed: Box<IoReq>) {
         self.inner_mut()._send_completed(completed)
+    }
+    pub(crate) fn _send_completed_list(&self, completed: &mut SList<IoReq>) {
+        self.inner_mut()._send_completed_list(completed)
     }
 }
 
@@ -119,7 +122,19 @@ impl Inner {
         self.submit_batch_len = 0;
         len
     }
-    fn _send_completed(&mut self, completed: &mut SList<IoReq>) {
+    fn _send_completed(&mut self, completed: Box<IoReq>) {
+        // debug_assert!(completed.status() != IoReq::STATUS_PENDING);
+        if crate::sys::ThreadId::current() == self.completed_queue.owner_thread_id() {
+            // Fast path
+            self.completed_len += 1;
+            self.completed.push_back(completed);
+        } else {
+            // Slow path
+            self.completed_queue
+                .append(&mut SList::from_node(completed));
+        }
+    }
+    fn _send_completed_list(&mut self, completed: &mut SList<IoReq>) {
         // debug_assert!(completed.status() != IoReq::STATUS_PENDING);
         if crate::sys::ThreadId::current() == self.completed_queue.owner_thread_id() {
             // Fast path

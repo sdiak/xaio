@@ -33,6 +33,16 @@ impl SLink {
     }
 
     #[inline(always)]
+    pub(crate) fn into_ref_mut<'a, T: SListNode>(link: *mut SLink) -> Option<&'a mut T> {
+        if link.is_null() {
+            None
+        } else {
+            let uptr = link as usize - T::offset_of_link();
+            Some(unsafe { &mut *(uptr as *mut T) })
+        }
+    }
+
+    #[inline(always)]
     pub(crate) fn into_ref<'a, T: SListNode>(link: *const SLink) -> Option<&'a T> {
         if link.is_null() {
             None
