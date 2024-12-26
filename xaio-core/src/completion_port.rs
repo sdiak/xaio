@@ -33,6 +33,10 @@ impl CompletionPort {
         }
     }
 
+    pub fn now(&self) -> u64 {
+        0
+    }
+
     pub fn socket(
         &self,
         domain: crate::Domain,
@@ -46,6 +50,45 @@ impl CompletionPort {
     }
     pub fn flush_submissions(&self) -> usize {
         self.inner_mut().flush_submissions()
+    }
+
+    pub fn deadline<F, T>(&self, user: T, deadline: u64, then: F) -> Option<Handle>
+    where
+        F: FnOnce(T, u64),
+    {
+        let x = Box::new(Deadline {
+            header: ReqHeader { tmp: 0 },
+            deadline,
+            then,
+            user,
+        });
+        std::mem::forget(x);
+        None
+    }
+}
+
+pub(crate) trait Operation {
+    /// Returns true when this operation should be kept under the driver
+    fn poll(&mut self, driver: &u64) -> bool; // TODO: driver
+}
+
+#[repr(C)]
+struct Handle {
+    __op: std::ptr::NonNull<libc::c_void>,
+}
+
+struct ReqHeader {
+    tmp: i32,
+}
+struct Deadline<F: FnOnce(T, u64), T> {
+    header: ReqHeader,
+    deadline: u64,
+    then: F,
+    user: T,
+}
+impl<F: FnOnce(T, u64), T> Operation for Deadline<F, T> {
+    fn poll(&mut self, driver: &u64) -> bool {
+        *driver >= self.deadline
     }
 }
 

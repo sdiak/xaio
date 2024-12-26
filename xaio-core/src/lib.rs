@@ -30,8 +30,14 @@ pub use io_buf::*;
 mod socket;
 pub use socket::*;
 
+mod status;
+pub use status::*;
+
 pub type PhantomUnsync = std::marker::PhantomData<std::cell::Cell<()>>;
 pub type PhantomUnsend = std::marker::PhantomData<std::sync::MutexGuard<'static, ()>>;
+
+mod r#async;
+pub(crate) use r#async::*;
 
 fn catch_enomem<C, T>(constructor: C) -> std::io::Result<T>
 where
