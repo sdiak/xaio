@@ -1,6 +1,8 @@
 use std::{
     cell::Cell,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
+    ops::{Deref, DerefMut},
+    ptr::NonNull,
     sync::Arc,
 };
 
@@ -81,6 +83,65 @@ pub fn add(left: u64, right: u64) -> u64 {
 }
 
 pub type Socket = socket2::Socket;
+
+#[repr(transparent)]
+pub struct Uniq<T: Sized>(std::ptr::NonNull<T>);
+
+impl<T: Sized> Uniq<T> {
+    pub const LAYOUT: std::alloc::Layout = unsafe {
+        std::alloc::Layout::from_size_align_unchecked(
+            std::mem::size_of::<T>(),
+            std::mem::align_of::<T>(),
+        )
+    };
+    pub fn new(value: T) -> Option<Self> {
+        let ptr = unsafe { std::alloc::alloc(Self::LAYOUT) } as *mut T;
+        if !ptr.is_null() {
+            unsafe { ptr.write(value) };
+            Some(Self(unsafe { NonNull::new_unchecked(ptr) }))
+        } else {
+            None
+        }
+    }
+    pub fn as_ptr(&mut self) -> *mut T {
+        self.0.as_ptr()
+    }
+    pub fn as_mut(&mut self) -> &mut T {
+        unsafe { self.0.as_mut() }
+    }
+    pub fn as_ref(&self) -> &T {
+        unsafe { self.0.as_ref() }
+    }
+    pub unsafe fn from_raw(raw: *mut T) -> Uniq<T> {
+        Self(unsafe { NonNull::new_unchecked(raw) })
+    }
+    pub unsafe fn into_raw(self) -> *mut T {
+        let raw = self.0.as_ptr();
+        std::mem::forget(self);
+        raw
+    }
+}
+impl<T: Sized> Deref for Uniq<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.0.as_ref() }
+    }
+}
+impl<T: Sized> DerefMut for Uniq<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { self.0.as_mut() }
+    }
+}
+impl<T: Sized> Drop for Uniq<T> {
+    fn drop(&mut self) {
+        let ptr = self.0.as_ptr();
+        unsafe {
+            std::ptr::drop_in_place(ptr);
+            std::alloc::dealloc(ptr as _, Self::LAYOUT);
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

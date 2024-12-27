@@ -1,4 +1,4 @@
-use crate::{collection::SList, IoReq};
+use crate::{collection::SList, IoReq, Uniq};
 
 #[derive(Debug, Clone, Copy)]
 pub struct IoDriverConfig {
@@ -38,7 +38,7 @@ pub trait IoReqSender: Clone {
     // fn can_serve(&self, opcode: OpCode) -> bool;
 
     /// Sends one request to the driver (the request might be buffered until the call to `IoDriverSender::flush`)
-    fn send_one(&self, request: Box<IoReq>);
+    fn send_one(&self, request: Uniq<IoReq>);
 
     /// Sends a batch of requests to the driver (the requests might be buffered until the call to `IoDriverSender::flush`)
     fn send_many(&self, requests: &mut crate::collection::SList<IoReq>) {

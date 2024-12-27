@@ -6,51 +6,10 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
+use crate::Uniq;
+
 pub trait SListNode: Sized {
-    fn offset_of_link() -> usize;
-    fn drop(ptr: Box<Self>);
-}
-
-#[repr(transparent)]
-pub struct Uniq<T: Sized>(NonNull<T>);
-
-impl<T: Sized> Uniq<T> {
-    pub const LAYOUT: std::alloc::Layout = unsafe {
-        std::alloc::Layout::from_size_align_unchecked(
-            std::mem::size_of::<T>(),
-            std::mem::align_of::<T>(),
-        )
-    };
-    pub fn new(value: T) -> Option<Self> {
-        let ptr = unsafe { std::alloc::alloc(Self::LAYOUT) } as *mut T;
-        if !ptr.is_null() {
-            unsafe { ptr.write(value) };
-            Some(Self(unsafe { NonNull::new_unchecked(ptr) }))
-        } else {
-            None
-        }
-    }
-}
-impl<T: Sized> Deref for Uniq<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        unsafe { self.0.as_ref() }
-    }
-}
-impl<T: Sized> DerefMut for Uniq<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { self.0.as_mut() }
-    }
-}
-impl<T: Sized> Drop for Uniq<T> {
-    fn drop(&mut self) {
-        let ptr = self.0.as_ptr();
-        unsafe {
-            std::ptr::drop_in_place(ptr);
-            std::alloc::dealloc(ptr as _, Self::LAYOUT);
-        }
-    }
+    const OFFSET_OF_LINK: usize;
 }
 
 pub struct SLink {
@@ -67,15 +26,15 @@ impl SLink {
     const IN_A_LIST_BIT: usize = 1usize;
 
     #[inline(always)]
-    pub(crate) fn from<T: SListNode>(mut node: Box<T>) -> *mut SLink {
-        let uptr = node.as_mut() as *mut T as usize + T::offset_of_link();
+    pub(crate) fn from<T: SListNode>(mut node: Uniq<T>) -> *mut SLink {
+        let uptr = node.as_mut() as *mut T as usize + T::OFFSET_OF_LINK;
         std::mem::forget(node);
         uptr as _
     }
     #[inline(always)]
-    pub(crate) fn into<T: SListNode>(link: *mut SLink) -> Box<T> {
-        let uptr = link as usize - T::offset_of_link();
-        unsafe { Box::from_raw(uptr as *mut T) }
+    pub(crate) fn into<T: SListNode>(link: *mut SLink) -> Uniq<T> {
+        let uptr = link as usize - T::OFFSET_OF_LINK;
+        unsafe { Uniq::from_raw(uptr as *mut T) }
     }
 
     #[inline(always)]
@@ -83,7 +42,7 @@ impl SLink {
         if link.is_null() {
             None
         } else {
-            let uptr = link as usize - T::offset_of_link();
+            let uptr = link as usize - T::OFFSET_OF_LINK;
             Some(unsafe { &mut *(uptr as *mut T) })
         }
     }
@@ -93,7 +52,7 @@ impl SLink {
         if link.is_null() {
             None
         } else {
-            let uptr = link as usize - T::offset_of_link();
+            let uptr = link as usize - T::OFFSET_OF_LINK;
             Some(unsafe { &*(uptr as *mut T) })
         }
     }
