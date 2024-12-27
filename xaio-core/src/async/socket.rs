@@ -1,8 +1,8 @@
 use std::{io::ErrorKind, mem::MaybeUninit};
 
-use crate::Status;
+use crate::{Socket, Status};
 
-use super::{AsyncOp, PollContext};
+use super::{AsyncOp, AsyncOpCode, PollContext};
 
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 const _MSG_DONTWAIT: libc::c_int = libc::MSG_DONTWAIT as _;
@@ -10,13 +10,14 @@ const _MSG_DONTWAIT: libc::c_int = libc::MSG_DONTWAIT as _;
 const _MSG_DONTWAIT: libc::c_int = 0 as _;
 
 pub struct AsyncSend {
-    pub socket: socket2::Socket, // TODO: driver socket ?
+    pub socket: Socket, // TODO: driver socket ?
     pub buffer: crate::IoBuf,
     pub todo: i32,
     pub done: i32,
 }
 
 impl AsyncOp for AsyncSend {
+    const OP_CODE: AsyncOpCode = AsyncOpCode::SEND;
     fn poll(&mut self, _cx: &PollContext) -> Status {
         while self.todo < self.done {
             match self.socket.send_with_flags(
@@ -43,13 +44,14 @@ impl AsyncOp for AsyncSend {
 }
 
 pub struct AsyncRecv {
-    pub socket: socket2::Socket, // TODO: driver socket ?
+    pub socket: Socket, // TODO: driver socket ?
     pub buffer: crate::IoBuf,
     pub todo: i32,
     pub done: i32,
 }
 
 impl AsyncOp for AsyncRecv {
+    const OP_CODE: AsyncOpCode = AsyncOpCode::RECV;
     fn poll(&mut self, _cx: &PollContext) -> Status {
         while self.todo < self.done {
             match self.socket.recv_with_flags(

@@ -5,7 +5,7 @@ use std::{
 
 use crate::Status;
 
-use super::AsyncOp;
+use super::{AsyncOp, AsyncOpCode};
 
 pub struct AsyncRead {
     pub file: std::fs::File, // TODO: driver fd ?
@@ -15,6 +15,7 @@ pub struct AsyncRead {
 }
 
 impl AsyncOp for AsyncRead {
+    const OP_CODE: AsyncOpCode = AsyncOpCode::READ;
     fn poll(&mut self, _cx: &super::PollContext) -> crate::Status {
         match self
             .file
@@ -37,6 +38,7 @@ pub struct AsyncWrite {
 }
 
 impl AsyncOp for AsyncWrite {
+    const OP_CODE: AsyncOpCode = AsyncOpCode::WRITE;
     fn poll(&mut self, _cx: &super::PollContext) -> crate::Status {
         match self
             .file
