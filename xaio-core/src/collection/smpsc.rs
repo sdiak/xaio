@@ -6,7 +6,6 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use crate::Uniq;
 use crate::Unparker;
 use crate::{sys::ThreadId, Unpark};
 
@@ -20,7 +19,7 @@ pub struct Receiver<T: SListNode>(Arc<Inner<T>>, crate::PhantomUnsend, crate::Ph
 pub struct Sender<T: SListNode>(Arc<Inner<T>>);
 impl<T: SListNode> Sender<T> {
     #[inline(always)]
-    pub fn send_one(&mut self, node: Uniq<T>) {
+    pub fn send_one(&mut self, node: Box<T>) {
         self.send_all(&mut SList::from_node(node))
     }
     #[inline(always)]
@@ -68,7 +67,7 @@ impl<T: SListNode> BufferedSender<T> {
     }
 
     #[inline(always)]
-    pub fn send_one(&mut self, node: Uniq<T>) {
+    pub fn send_one(&mut self, node: Box<T>) {
         self.buffer.push_front(node);
         self.buffered += 1;
         if self.buffered >= self.max_buffered.get() {
@@ -240,16 +239,20 @@ mod test {
         link: SLink,
     }
     impl IntNode {
-        fn new(val: i32) -> Uniq<Self> {
-            Uniq::new(Self {
+        fn new(val: i32) -> Box<Self> {
+            Box::new(Self {
                 val,
                 link: SLink::new(),
             })
-            .unwrap()
         }
     }
     impl SListNode for IntNode {
-        const OFFSET_OF_LINK: usize = core::mem::offset_of!(IntNode, link);
+        fn offset_of_link() -> usize {
+            core::mem::offset_of!(IntNode, link)
+        }
+        fn drop(ptr: Box<Self>) {
+            drop(ptr);
+        }
     }
 
     #[derive(Clone)]

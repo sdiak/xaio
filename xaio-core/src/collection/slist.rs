@@ -1,7 +1,5 @@
 use std::{marker::PhantomData, sync::atomic::Ordering};
 
-use crate::Uniq;
-
 use super::{SLink, SListNode};
 
 pub struct SList<T: SListNode> {
@@ -27,7 +25,7 @@ impl<T: SListNode> SList<T> {
         }
     }
     /// Returns a new list with the given node
-    pub fn from_node(node: Uniq<T>) -> Self {
+    pub fn from_node(node: Box<T>) -> Self {
         let node: *mut SLink = SLink::from::<T>(node);
         unsafe { (*node).list_set_next(std::ptr::null_mut(), Ordering::Relaxed) };
         Self {
@@ -71,7 +69,7 @@ impl<T: SListNode> SList<T> {
         while !self.head.is_null() {
             let to_drop = self.head;
             self.head = unsafe { (*to_drop).list_pop_next(Ordering::Relaxed) };
-            let _ = SLink::into::<T>(to_drop);
+            T::drop(SLink::into::<T>(to_drop));
         }
         self.tail = std::ptr::null_mut();
     }
@@ -82,7 +80,7 @@ impl<T: SListNode> SList<T> {
     ///  * `new_front` the new front of the list
     /// # Complexity
     ///  * O(1)
-    pub fn push_front(&mut self, new_front: Uniq<T>) {
+    pub fn push_front(&mut self, new_front: Box<T>) {
         let new_head: *mut SLink = SLink::from::<T>(new_front);
         unsafe { (*new_head).list_set_next(self.head, Ordering::Relaxed) };
         if self.head.is_null() {
@@ -91,7 +89,7 @@ impl<T: SListNode> SList<T> {
         self.head = new_head;
     }
 
-    fn pop_front_unchecked(&mut self) -> Uniq<T> {
+    fn pop_front_unchecked(&mut self) -> Box<T> {
         let old_head = self.head;
         self.head = unsafe { (*old_head).list_pop_next(Ordering::Relaxed) };
         if self.head.is_null() {
@@ -106,7 +104,7 @@ impl<T: SListNode> SList<T> {
     ///  * `None` when `self.is_empty()`
     /// # Complexity
     ///  * O(1)
-    pub fn pop_front(&mut self) -> Option<Uniq<T>> {
+    pub fn pop_front(&mut self) -> Option<Box<T>> {
         if !self.head.is_null() {
             Some(self.pop_front_unchecked())
         } else {
@@ -120,7 +118,7 @@ impl<T: SListNode> SList<T> {
     ///  * `new_back` the new back of the list
     /// # Complexity
     ///  * O(1)
-    pub fn push_back(&mut self, new_back: Uniq<T>) {
+    pub fn push_back(&mut self, new_back: Box<T>) {
         let new_tail = SLink::from::<T>(new_back);
         unsafe { (*new_tail).list_set_next(std::ptr::null_mut(), Ordering::Relaxed) };
         if self.tail.is_null() {
@@ -175,7 +173,7 @@ impl<T: SListNode> SList<T> {
     ///  * `None` when `self.is_empty()`
     /// # Complexity
     ///  * O(n)
-    pub fn pop_back(&mut self) -> Option<Uniq<T>> {
+    pub fn pop_back(&mut self) -> Option<Box<T>> {
         let old_tail = self.tail;
         if !old_tail.is_null() {
             let mut it = self.head;
@@ -233,7 +231,7 @@ impl<T: SListNode> SList<T> {
                     (*prev)
                         .list_update_next((*it).list_pop_next(Ordering::Relaxed), Ordering::Relaxed)
                 };
-                removed.push_back(unsafe { Uniq::from_raw(node as _) });
+                removed.push_back(unsafe { Box::from_raw(node as _) });
                 if it == self.tail {
                     self.tail = prev;
                 }
@@ -286,15 +284,20 @@ mod test {
         }
     }
     impl SListNode for IntNode {
-        const OFFSET_OF_LINK: usize = core::mem::offset_of!(IntNode, link);
+        fn offset_of_link() -> usize {
+            core::mem::offset_of!(IntNode, link)
+        }
+        fn drop(ptr: Box<Self>) {
+            drop(ptr);
+        }
     }
 
     #[test]
     fn test_simple() {
-        let mut a = Uniq::<IntNode>::new(IntNode::new(0)).unwrap();
-        let mut b = Uniq::<IntNode>::new(IntNode::new(1)).unwrap();
-        let mut c = Uniq::<IntNode>::new(IntNode::new(2)).unwrap();
-        let mut d = Uniq::<IntNode>::new(IntNode::new(3)).unwrap();
+        let mut a = Box::<IntNode>::new(IntNode::new(0));
+        let mut b = Box::<IntNode>::new(IntNode::new(1));
+        let mut c = Box::<IntNode>::new(IntNode::new(2));
+        let mut d = Box::<IntNode>::new(IntNode::new(3));
 
         let mut list = SList::<IntNode>::new();
 
@@ -340,10 +343,10 @@ mod test {
 
     #[test]
     fn test_move() {
-        let a = Uniq::<IntNode>::new(IntNode::new(0)).unwrap();
-        let b = Uniq::<IntNode>::new(IntNode::new(1)).unwrap();
-        let c = Uniq::<IntNode>::new(IntNode::new(2)).unwrap();
-        let d = Uniq::<IntNode>::new(IntNode::new(3)).unwrap();
+        let a = Box::<IntNode>::new(IntNode::new(0));
+        let b = Box::<IntNode>::new(IntNode::new(1));
+        let c = Box::<IntNode>::new(IntNode::new(2));
+        let d = Box::<IntNode>::new(IntNode::new(3));
         let mut list = SList::<IntNode>::from_node(a);
 
         assert!(!list.is_empty());
@@ -354,8 +357,7 @@ mod test {
         list.push_back(c);
         list.push_back(d);
 
-        let mut list2 =
-            SList::<IntNode>::from_node(Uniq::<IntNode>::new(IntNode::new(-1)).unwrap());
+        let mut list2 = SList::<IntNode>::from_node(Box::<IntNode>::new(IntNode::new(-1)));
         list2.append(&mut list);
         assert!(list.is_empty());
         list2.append(&mut SList::<IntNode>::new());
@@ -366,12 +368,11 @@ mod test {
         assert!(list2.pop_back().unwrap().val == 0);
         assert!(list2.pop_back().unwrap().val == -1);
 
-        list.push_back(Uniq::<IntNode>::new(IntNode::new(1)).unwrap());
-        list.push_back(Uniq::<IntNode>::new(IntNode::new(2)).unwrap());
-        list.push_back(Uniq::<IntNode>::new(IntNode::new(3)).unwrap());
-        let mut list2 =
-            SList::<IntNode>::from_node(Uniq::<IntNode>::new(IntNode::new(-1)).unwrap());
-        list2.push_back(Uniq::<IntNode>::new(IntNode::new(0)).unwrap());
+        list.push_back(Box::<IntNode>::new(IntNode::new(1)));
+        list.push_back(Box::<IntNode>::new(IntNode::new(2)));
+        list.push_back(Box::<IntNode>::new(IntNode::new(3)));
+        let mut list2 = SList::<IntNode>::from_node(Box::<IntNode>::new(IntNode::new(-1)));
+        list2.push_back(Box::<IntNode>::new(IntNode::new(0)));
         list.prepend(&mut list2);
         list.prepend(&mut SList::<IntNode>::new());
         assert!(list2.is_empty());
@@ -390,7 +391,7 @@ mod test {
         assert!(list.pop_back().unwrap().val == 0);
         assert!(list.pop_back().unwrap().val == -1);
 
-        let mut list = SList::<IntNode>::from_node(Uniq::<IntNode>::new(IntNode::new(42)).unwrap());
+        let mut list = SList::<IntNode>::from_node(Box::<IntNode>::new(IntNode::new(42)));
         let mut list2 = SList::<IntNode>::new();
         assert!(!list.is_empty());
         assert!(list2.is_empty());
@@ -403,10 +404,10 @@ mod test {
 
     #[test]
     fn test_push_back() {
-        let mut a = Uniq::<IntNode>::new(IntNode::new(0)).unwrap();
-        let mut b = Uniq::<IntNode>::new(IntNode::new(1)).unwrap();
-        let mut c = Uniq::<IntNode>::new(IntNode::new(2)).unwrap();
-        let mut d = Uniq::<IntNode>::new(IntNode::new(3)).unwrap();
+        let mut a = Box::<IntNode>::new(IntNode::new(0));
+        let mut b = Box::<IntNode>::new(IntNode::new(1));
+        let mut c = Box::<IntNode>::new(IntNode::new(2));
+        let mut d = Box::<IntNode>::new(IntNode::new(3));
         let mut list = SList::<IntNode>::new();
 
         assert!(list.is_empty());
@@ -422,19 +423,19 @@ mod test {
         assert!(list.pop_back().unwrap().val == 2);
         assert!(list.pop_back().unwrap().val == 1);
         assert!(list.pop_back().unwrap().val == 0);
-        list.push_back(Uniq::<IntNode>::new(IntNode::new(0)).unwrap());
-        list.push_back(Uniq::<IntNode>::new(IntNode::new(1)).unwrap());
+        list.push_back(Box::<IntNode>::new(IntNode::new(0)));
+        list.push_back(Box::<IntNode>::new(IntNode::new(1)));
         assert!(list.pop_back().unwrap().val == 1);
         assert!(list.pop_back().unwrap().val == 0);
 
         assert!(list.is_empty());
-        list.push_back(Uniq::<IntNode>::new(IntNode::new(0)).unwrap());
-        list.push_back(Uniq::<IntNode>::new(IntNode::new(1)).unwrap());
+        list.push_back(Box::<IntNode>::new(IntNode::new(0)));
+        list.push_back(Box::<IntNode>::new(IntNode::new(1)));
         assert!(!list.is_empty());
         list.clear();
         assert!(list.is_empty());
-        list.push_front(Uniq::<IntNode>::new(IntNode::new(0)).unwrap());
-        list.push_front(Uniq::<IntNode>::new(IntNode::new(1)).unwrap());
+        list.push_front(Box::<IntNode>::new(IntNode::new(0)));
+        list.push_front(Box::<IntNode>::new(IntNode::new(1)));
         drop(list);
     }
 }

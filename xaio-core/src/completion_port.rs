@@ -2,8 +2,8 @@ use socket2::Socket;
 
 use crate::io_driver::{IoDriver, TmpIoDriverSender};
 use crate::sys::io_driver;
+use crate::Unpark;
 use crate::{collection::smpsc2::Queue, collection::SList, IoReq};
-use crate::{Uniq, Unpark};
 use std::io::Result;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -45,7 +45,7 @@ impl CompletionPort {
     ) -> Result<Socket> {
         todo!()
     }
-    pub fn submit(&self, prepared_request: Uniq<IoReq>) {
+    pub fn submit(&self, prepared_request: Box<IoReq>) {
         self.inner_mut().submit(prepared_request)
     }
     pub fn flush_submissions(&self) -> usize {
@@ -56,7 +56,7 @@ impl CompletionPort {
     where
         F: FnOnce(T, u64),
     {
-        let x = Uniq::new(Deadline {
+        let x = Box::new(Deadline {
             header: ReqHeader { tmp: 0 },
             deadline,
             then,
@@ -112,7 +112,7 @@ impl CompletedIoReqSender {
             }
         }
     }
-    pub(crate) fn _send_completed(&self, completed: Uniq<IoReq>) {
+    pub(crate) fn _send_completed(&self, completed: Box<IoReq>) {
         self.inner_mut()._send_completed(completed)
     }
     pub(crate) fn _send_completed_list(&self, completed: &mut SList<IoReq>) {
@@ -154,7 +154,7 @@ impl Inner {
             completed_queue: Queue::new(InnerUnpark(std::thread::current())),
         }
     }
-    fn submit(&mut self, prepared_request: Uniq<IoReq>) {
+    fn submit(&mut self, prepared_request: Box<IoReq>) {
         self.requests_in_flight += 1;
         self.submit_batch_len += 1;
         self.submit_batch.push_back(prepared_request);
@@ -165,7 +165,7 @@ impl Inner {
         self.submit_batch_len = 0;
         len
     }
-    fn _send_completed(&mut self, completed: Uniq<IoReq>) {
+    fn _send_completed(&mut self, completed: Box<IoReq>) {
         // debug_assert!(completed.status() != IoReq::STATUS_PENDING);
         if crate::sys::ThreadId::current() == self.completed_queue.owner_thread_id() {
             // Fast path
