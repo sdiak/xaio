@@ -4,3 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+xaio-core = { path = "../xaio-core" }
+futures-util = "0.3.31"

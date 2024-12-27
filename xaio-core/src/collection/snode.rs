@@ -1,10 +1,56 @@
 #![feature(associated_type_defaults)]
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{
+    ops::{Deref, DerefMut},
+    ptr::NonNull,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 pub trait SListNode: Sized {
     fn offset_of_link() -> usize;
     fn drop(ptr: Box<Self>);
+}
+
+#[repr(transparent)]
+pub struct Uniq<T: Sized>(NonNull<T>);
+
+impl<T: Sized> Uniq<T> {
+    pub const LAYOUT: std::alloc::Layout = unsafe {
+        std::alloc::Layout::from_size_align_unchecked(
+            std::mem::size_of::<T>(),
+            std::mem::align_of::<T>(),
+        )
+    };
+    pub fn new(value: T) -> Option<Self> {
+        let ptr = unsafe { std::alloc::alloc(Self::LAYOUT) } as *mut T;
+        if !ptr.is_null() {
+            unsafe { ptr.write(value) };
+            Some(Self(unsafe { NonNull::new_unchecked(ptr) }))
+        } else {
+            None
+        }
+    }
+}
+impl<T: Sized> Deref for Uniq<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.0.as_ref() }
+    }
+}
+impl<T: Sized> DerefMut for Uniq<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { self.0.as_mut() }
+    }
+}
+impl<T: Sized> Drop for Uniq<T> {
+    fn drop(&mut self) {
+        let ptr = self.0.as_ptr();
+        unsafe {
+            std::ptr::drop_in_place(ptr);
+            std::alloc::dealloc(ptr as _, Self::LAYOUT);
+        }
+    }
 }
 
 pub struct SLink {
