@@ -1,15 +1,15 @@
 use std::{
-    alloc::Layout,
-    boxed::Box,
     mem::ManuallyDrop,
+    ops::DerefMut,
     sync::atomic::{AtomicI32, AtomicU64, Ordering},
 };
 
 mod deadline;
 pub use deadline::AsyncDeadline;
 mod socket;
-use enum_dispatch::enum_dispatch;
 pub use socket::*;
+mod file;
+pub use file::*;
 
 use crate::Status;
 
@@ -23,152 +23,111 @@ impl CompletionPort2 {
     }
 }
 
-#[enum_dispatch]
-trait MyTrait {
-    fn doSomething(&self) {}
-}
-#[repr(C, packed)]
-struct A {}
-
-#[repr(C, packed)]
-struct B {
-    u: u64,
-}
-
-#[repr(C, packed)]
-struct C {
-    u: u64,
-}
-
-impl MyTrait for A {}
-impl MyTrait for B {}
-impl MyTrait for C {}
-
-#[enum_dispatch(MyTrait)]
-#[repr(u8)]
-enum MyEnum {
-    A(A),
-    B(B),
-    C(C),
-}
-
-struct MyAsync {
-    i: u32,
-    z: u16,
-    y: u8,
-    u: MyEnum,
-}
-
-const _: () = assert!(
-    std::mem::size_of::<MyAsync>() == 16,
-    "assert_foo_equals_bar"
-);
-
 pub struct PollContext<'a> {
     now: u64,
     driver: &'a Driver,
     port: &'a CompletionPort2,
 }
 
-pub trait AsyncData: Sized {
+pub type Completion<D: AsyncOp> = fn(D, Status);
+
+pub trait AsyncOp {
     fn poll(&mut self, cx: &PollContext) -> Status;
 }
 
-pub type Completion<D: AsyncData> = fn(D, Status);
-
-struct AsyncInner<D: AsyncData> {
-    vtable: &'static AsyncVTable,
-    status: AtomicI32,
-    data: D,
+#[repr(u8)]
+pub enum AsyncOpCode {
+    NO_OP,
+    DEADLINE,
+    SEND,
+    RECV,
+    READ,
+    WRITE,
 }
-
-struct AsyncVTable {
-    layout: Layout,
-    poll: unsafe fn(*mut (), &PollContext) -> Status,
-    drop: unsafe fn(*mut ()),
-}
-const fn max(a: usize, b: usize) -> usize {
-    if a > b {
-        a
-    } else {
-        b
+impl From<u8> for AsyncOpCode {
+    #[inline(always)]
+    fn from(value: u8) -> Self {
+        if value <= AsyncOpCode::NO_OP as u8 {
+            unsafe { std::mem::transmute::<u8, AsyncOpCode>(value) }
+        } else {
+            AsyncOpCode::NO_OP
+        }
     }
 }
-pub struct Noop {
-    unused: usize,
+impl From<AsyncOpCode> for u8 {
+    #[inline(always)]
+    fn from(value: AsyncOpCode) -> Self {
+        value as _
+    }
 }
-impl AsyncData for Noop {
+
+#[derive(Debug, Clone, Copy)]
+pub struct AsyncNoOp {}
+impl AsyncOp for AsyncNoOp {
     fn poll(&mut self, _cx: &PollContext) -> Status {
         Status::new(0)
     }
 }
-impl<D: AsyncData> AsyncInner<D> {
-    pub const VTABLE: AsyncVTable = AsyncVTable {
-        layout: unsafe {
-            Layout::from_size_align_unchecked(
-                max(
-                    std::mem::size_of::<AsyncInner<D>>(),
-                    std::mem::size_of::<AsyncInner<Noop>>(),
-                ),
-                max(
-                    std::mem::align_of::<AsyncInner<D>>(),
-                    std::mem::align_of::<AsyncInner<Noop>>(),
-                ),
-            )
-        },
-        poll: AsyncInner::<D>::__poll,
-        drop: AsyncInner::<D>::__drop,
-    };
 
-    unsafe fn __poll(thiz: *mut (), cx: &PollContext) -> Status {
-        (unsafe { &mut *(thiz as *mut AsyncInner<D>) })
-            .data
-            .poll(cx)
+#[repr(C)]
+union AsyncUnion {
+    no_op: AsyncNoOp,
+    deadline: AsyncDeadline,
+    recv: ManuallyDrop<AsyncRecv>,
+    send: ManuallyDrop<AsyncSend>,
+    read: ManuallyDrop<AsyncRead>,
+    write: ManuallyDrop<AsyncWrite>,
+}
+
+#[repr(C)]
+pub struct Async {
+    status: AtomicI32,
+    flags_and_op_code: u32,
+    concrete: AsyncUnion,
+}
+impl Async {
+    #[inline(always)]
+    pub const fn raw_code(&self) -> u8 {
+        (self.flags_and_op_code & 0xFFu32) as u8
     }
-
-    unsafe fn __drop(thiz: *mut ()) {
-        let _ = std::ptr::read(thiz as *mut AsyncInner<D>);
+    #[inline(always)]
+    const unsafe fn code_unchecked(&self) -> AsyncOpCode {
+        unsafe { std::mem::transmute::<u8, AsyncOpCode>(self.raw_code()) }
     }
-
-    fn new(data: D) -> Self {
-        Self {
-            vtable: &AsyncInner::<D>::VTABLE,
-            status: AtomicI32::new(Status::pending().value()),
-            data,
+    #[inline]
+    pub const fn code(&self) -> AsyncOpCode {
+        let value = self.raw_code();
+        if value <= AsyncOpCode::NO_OP as u8 {
+            unsafe { std::mem::transmute::<u8, AsyncOpCode>(value) }
+        } else {
+            AsyncOpCode::NO_OP
         }
     }
 }
-
-#[repr(transparent)]
-pub struct Async(ManuallyDrop<Box<AsyncInner<Noop>>>);
-
+impl AsyncOp for Async {
+    fn poll(&mut self, cx: &PollContext) -> Status {
+        unsafe {
+            match self.code_unchecked() {
+                AsyncOpCode::NO_OP => self.concrete.no_op.poll(cx),
+                AsyncOpCode::DEADLINE => self.concrete.deadline.poll(cx),
+                AsyncOpCode::RECV => self.concrete.recv.deref_mut().poll(cx),
+                AsyncOpCode::SEND => self.concrete.send.deref_mut().poll(cx),
+                AsyncOpCode::READ => self.concrete.read.deref_mut().poll(cx),
+                AsyncOpCode::WRITE => self.concrete.write.deref_mut().poll(cx),
+            }
+        }
+    }
+}
 impl Drop for Async {
     fn drop(&mut self) {
-        let thiz = self.0.as_mut() as *mut AsyncInner<Noop>;
-        let vtable = unsafe { (*thiz).vtable };
-        unsafe { (vtable.drop)(thiz as _) };
-        unsafe { std::alloc::dealloc(thiz as _, vtable.layout) };
-    }
-}
-
-impl Async {
-    pub(crate) fn try_new<D: AsyncData>(data: D) -> Option<Self> {
-        let thiz: *mut AsyncInner<D> =
-            unsafe { std::alloc::alloc(AsyncInner::<D>::VTABLE.layout) } as _;
-        if !thiz.is_null() {
-            unsafe { thiz.write(AsyncInner::<D>::new(data)) };
-            Some(Self(unsafe { ManuallyDrop::new(Box::from_raw(thiz as _)) }))
-        } else {
-            None
-        }
-    }
-
-    pub(crate) fn poll(&mut self, cx: &PollContext) -> Status {
-        let status = self.0.status.load(Ordering::Relaxed);
-        if status == Status::PENDING {
-            unsafe { (self.0.vtable.poll)(self.0.as_mut() as *mut AsyncInner<Noop> as _, cx) }
-        } else {
-            Status::new(status)
+        unsafe {
+            match self.code_unchecked() {
+                AsyncOpCode::RECV => ManuallyDrop::drop(&mut self.concrete.recv),
+                AsyncOpCode::SEND => ManuallyDrop::drop(&mut self.concrete.send),
+                AsyncOpCode::READ => ManuallyDrop::drop(&mut self.concrete.read),
+                AsyncOpCode::WRITE => ManuallyDrop::drop(&mut self.concrete.write),
+                _ => (),
+            }
         }
     }
 }

@@ -2,7 +2,7 @@ use std::{io::ErrorKind, mem::MaybeUninit};
 
 use crate::Status;
 
-use super::{AsyncData, PollContext};
+use super::{AsyncOp, PollContext};
 
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 const _MSG_DONTWAIT: libc::c_int = libc::MSG_DONTWAIT as _;
@@ -16,7 +16,7 @@ pub struct AsyncSend {
     pub done: i32,
 }
 
-impl AsyncData for AsyncSend {
+impl AsyncOp for AsyncSend {
     fn poll(&mut self, _cx: &PollContext) -> Status {
         while self.todo < self.done {
             match self.socket.send_with_flags(
@@ -49,7 +49,7 @@ pub struct AsyncRecv {
     pub done: i32,
 }
 
-impl AsyncData for AsyncRecv {
+impl AsyncOp for AsyncRecv {
     fn poll(&mut self, _cx: &PollContext) -> Status {
         while self.todo < self.done {
             match self.socket.recv_with_flags(
