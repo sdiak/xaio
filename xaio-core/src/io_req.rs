@@ -2,7 +2,7 @@ use crate::collection::SList;
 use crate::io_driver::IoDriver;
 use crate::sys::RawSd;
 use crate::{io_buf::IoBuf, CompletionPort};
-use crate::{CompletedIoReqSender, PollFlag};
+use crate::{CompletedIoReqSender, PollFlag, Uniq};
 use std::{io::Result, mem::ManuallyDrop, ops::DerefMut, sync::atomic::Ordering};
 
 // pub type IoReqList = crate::collection::SList<xaio_req_s>;
@@ -116,8 +116,8 @@ impl IoReq {
     pub const STATUS_PENDING: i32 = i32::MIN;
     pub const STATUS_OTHER: i32 = i32::MIN + 1;
 
-    pub fn new() -> Box<Self> {
-        Box::new(Self::default())
+    pub fn new() -> Uniq<Self> {
+        Uniq::new(Self::default())
     }
     pub fn sanity_check(&self) -> Result<()> {
         //TODO:
@@ -186,7 +186,7 @@ impl IoReq {
         let status = status + (status == IoReq::STATUS_PENDING) as i32;
         self.status.store(status, Ordering::Release);
     }
-    pub(crate) fn _complete(mut self: Box<Self>, status: i32) {
+    pub(crate) fn _complete(mut self: Uniq<Self>, status: i32) {
         self._set_status(status);
         self.completion_port()
             ._send_completed_list(&mut SList::from_node(self));
@@ -201,7 +201,7 @@ impl IoReq {
 
     #[inline]
     fn __submit_send_or_recv(
-        mut self: Box<Self>,
+        mut self: Uniq<Self>,
         port: &'static CompletionPort,
         op_code: OpCode,
         socket: RawSd,
@@ -217,7 +217,7 @@ impl IoReq {
         port.submit(self)
     }
     pub fn recv(
-        self: Box<Self>,
+        self: Uniq<Self>,
         port: &'static CompletionPort,
         socket: RawSd,
         buffer: IoBuf,
@@ -227,7 +227,7 @@ impl IoReq {
     }
 
     pub fn send(
-        self: Box<Self>,
+        self: Uniq<Self>,
         port: &'static CompletionPort,
         socket: RawSd,
         buffer: IoBuf,
@@ -238,12 +238,7 @@ impl IoReq {
 }
 
 impl crate::collection::SListNode for IoReq {
-    fn drop(ptr: Box<Self>) {
-        drop(ptr)
-    }
-    fn offset_of_link() -> usize {
-        core::mem::offset_of!(Self, collection_slink)
-    }
+    const OFFSET_OF_LINK: usize = core::mem::offset_of!(IoReq, collection_slink);
 }
 
 impl Default for IoReq {
