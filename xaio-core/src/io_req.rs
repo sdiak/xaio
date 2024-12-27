@@ -117,7 +117,7 @@ impl IoReq {
     pub const STATUS_OTHER: i32 = i32::MIN + 1;
 
     pub fn new() -> Uniq<Self> {
-        Uniq::new(Self::default())
+        Uniq::new(Self::default()).unwrap()
     }
     pub fn sanity_check(&self) -> Result<()> {
         //TODO:
@@ -186,10 +186,11 @@ impl IoReq {
         let status = status + (status == IoReq::STATUS_PENDING) as i32;
         self.status.store(status, Ordering::Release);
     }
-    pub(crate) fn _complete(mut self: Uniq<Self>, status: i32) {
+    pub(crate) fn _complete(&mut self, status: i32) {
         self._set_status(status);
-        self.completion_port()
-            ._send_completed_list(&mut SList::from_node(self));
+        todo!()
+        // self.completion_port()
+        // ._send_completed_list(&mut SList::from_node(self));
     }
 
     #[inline(always)]
@@ -201,7 +202,7 @@ impl IoReq {
 
     #[inline]
     fn __submit_send_or_recv(
-        mut self: Uniq<Self>,
+        &mut self,
         port: &'static CompletionPort,
         op_code: OpCode,
         socket: RawSd,
@@ -214,25 +215,14 @@ impl IoReq {
         socket_data.socket = socket;
         socket_data.done = 0;
         socket_data.todo = len;
-        port.submit(self)
+        // port.submit(self)
+        todo!()
     }
-    pub fn recv(
-        self: Uniq<Self>,
-        port: &'static CompletionPort,
-        socket: RawSd,
-        buffer: IoBuf,
-        len: u32,
-    ) {
+    pub fn recv(&mut self, port: &'static CompletionPort, socket: RawSd, buffer: IoBuf, len: u32) {
         self.__submit_send_or_recv(port, OpCode::RECV, socket, buffer, len)
     }
 
-    pub fn send(
-        self: Uniq<Self>,
-        port: &'static CompletionPort,
-        socket: RawSd,
-        buffer: IoBuf,
-        len: u32,
-    ) {
+    pub fn send(&mut self, port: &'static CompletionPort, socket: RawSd, buffer: IoBuf, len: u32) {
         self.__submit_send_or_recv(port, OpCode::SEND, socket, buffer, len)
     }
 }

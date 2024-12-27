@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{sys::epoll::Event, IoReq, PollFlag};
+use crate::{sys::epoll::Event, IoReq, PollFlag, Uniq};
 use std::io::Result;
 
 use super::epoll::{EPoll, EPollEvent};
@@ -27,7 +27,7 @@ struct Inner {
 }
 
 impl Inner {
-    pub fn submit(&self, req: Box<IoReq>) {
+    pub fn submit(&self, mut req: Uniq<IoReq>) {
         if !req.is_a_socket_op() {
             req._complete(-libc::ENOSYS);
         } else {
