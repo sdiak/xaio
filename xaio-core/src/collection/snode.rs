@@ -15,6 +15,26 @@ pub trait SListNode: Sized {
 pub struct SLink {
     next: AtomicUsize,
 }
+/*
+impl<T> From<Uniq<T>> for *mut SLink
+where
+    T: SListNode,
+{
+    fn from(mut node: Uniq<T>) -> Self {
+        let uptr = node.as_ptr() as usize + T::OFFSET_OF_LINK;
+        std::mem::forget(node);
+        uptr as _
+    }
+}
+impl<T> From<*mut SLink> for Uniq<T>
+where
+    T: SListNode,
+{
+    fn from(link: *mut SLink) -> Self {
+        let uptr = link as usize - T::OFFSET_OF_LINK;
+        unsafe { Uniq::from_raw(uptr as *mut T) }
+    }
+} */
 
 impl SLink {
     pub const fn new() -> SLink {

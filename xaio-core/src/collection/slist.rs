@@ -246,6 +246,8 @@ impl<T: SListNode> SList<T> {
     }
 }
 
+unsafe impl<T: SListNode> Send for SList<T> where T: Send {}
+
 pub struct SListIter<'a, T: SListNode> {
     pub(crate) pos: *const SLink,
     pub(crate) _phantom: PhantomData<&'a T>,
