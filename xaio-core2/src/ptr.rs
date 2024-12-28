@@ -80,10 +80,25 @@ impl<T: Sized> Ptr<T> {
     #[inline]
     pub unsafe fn from_raw(raw: *mut T) -> Option<Self> {
         if !raw.is_null() {
-            Some(Self(raw as usize, PhantomData {}))
+            Some(unsafe { Self::from_raw_unchecked(raw) })
         } else {
             None
         }
+    }
+    /// Wraps an existing pointer
+    ///
+    /// # Parameters
+    ///  * `raw` the data address (**must** remain valid until the end of `Some(self)` lifetime)
+    ///
+    /// # Returns
+    ///  * `Some(Uniq<T>)` on success
+    ///  * `None` when `raw.is_null()`
+    ///
+    /// # Safety
+    ///  A wrapped pointer can not be dropped, you must consume it with `Uniq<T>::into_raw()`
+    #[inline]
+    pub unsafe fn from_raw_unchecked(raw: *mut T) -> Self {
+        Self(raw as usize, PhantomData {})
     }
 
     /// Consumes `self` and returns it as a raw pointer.

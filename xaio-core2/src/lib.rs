@@ -3,17 +3,7 @@ pub use ptr::Ptr;
 mod completion_port;
 pub use completion_port::*;
 
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+pub mod driver;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub type PhantomUnsync = std::marker::PhantomData<std::cell::Cell<()>>;
+pub type PhantomUnsend = std::marker::PhantomData<std::sync::MutexGuard<'static, ()>>;
