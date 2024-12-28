@@ -5,6 +5,7 @@ pub use completion_port::*;
 mod request;
 pub use request::*;
 
+pub mod collection;
 pub mod driver;
 
 pub type PhantomUnsync = std::marker::PhantomData<std::cell::Cell<()>>;
