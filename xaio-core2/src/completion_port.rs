@@ -98,6 +98,10 @@ impl CompletionPort {
         hndl
     }
 
+    pub(crate) fn cancel_hint(&self, req: &Ptr<Request>) {
+        todo!()
+    }
+
     #[inline(always)]
     pub fn flush(&self) -> usize {
         let flushed = self.inner().buffer_len;

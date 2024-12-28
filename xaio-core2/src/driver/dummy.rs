@@ -5,17 +5,17 @@ use crate::{
     Request,
 };
 
-fn create_instance() -> DummyDriver {
+fn create_singleton() -> DummyDriver {
     let (tx, rx) = std::sync::mpsc::sync_channel::<DummyDriver>(1);
     let _ = std::thread::spawn(move || {
-        let mut thiz = DummyDriver::__create();
+        let thiz = DummyDriver::__create();
         tx.send(thiz.clone()).expect("Unrecoverable error");
         drop(tx);
         thiz.__thread_run();
     });
     rx.recv().expect("Unrecoverable error")
 }
-static INSTANCE: std::sync::LazyLock<DummyDriver> = std::sync::LazyLock::new(create_instance);
+static INSTANCE: std::sync::LazyLock<DummyDriver> = std::sync::LazyLock::new(create_singleton);
 
 use super::DriverTrait;
 
@@ -51,8 +51,7 @@ impl DummyDriver {
                 .queue
                 .park(|_: &mut SList<Request>| 0usize, &mut requests);
             while let Some(req) = requests.pop_front() {
-                // TODO:
-                todo!()
+                Request::done(req, -libc::ENOSYS);
             }
         }
     }
