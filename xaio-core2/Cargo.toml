@@ -7,6 +7,7 @@ edition = "2021"
 libc = { workspace = true }
 log = { workspace = true }
 cfg-if = { workspace = true }
+enum_dispatch = "0.3"
 
 [dev-dependencies]
 env_logger = "0.11.6"

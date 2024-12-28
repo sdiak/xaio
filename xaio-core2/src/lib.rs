@@ -2,6 +2,8 @@ mod ptr;
 pub use ptr::Ptr;
 mod completion_port;
 pub use completion_port::*;
+mod request;
+pub use request::*;
 
 pub mod driver;
 
