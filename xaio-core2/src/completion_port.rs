@@ -1,5 +1,5 @@
 use crate::{
-    driver::{DriverTrait, Sender},
+    driver::{self, Driver, DriverTrait},
     Handle, Ptr, Request,
 };
 
@@ -12,8 +12,8 @@ cfg_if::cfg_if! {
 }
 
 #[derive(Debug, Clone)]
-pub struct CompletionPort<D: DriverTrait>(
-    std::rc::Rc<CellType<CpInner<D>>>,
+pub struct CompletionPort(
+    std::rc::Rc<CellType<CpInner>>,
     crate::PhantomUnsync,
     crate::PhantomUnsend,
 );
@@ -23,24 +23,28 @@ pub static EPOCH: std::sync::LazyLock<std::time::Instant> =
     std::sync::LazyLock::new(std::time::Instant::now);
 
 #[derive(Debug)]
-struct CpInner<D: DriverTrait> {
-    sender: D::Sender,
+struct CpInner {
+    driver: Driver,
     epoch: std::time::Instant,
     cached_now: u64,
+    buffer: crate::collection::SList<crate::Request>,
+    buffer_len: usize,
 }
 
-impl<D: DriverTrait> CpInner<D> {
-    fn new(driver: &D, epoch: std::time::Instant) -> Self {
+impl CpInner {
+    fn new(driver: Driver, epoch: std::time::Instant) -> Self {
         Self {
-            sender: driver.sender(),
+            driver,
             epoch,
             cached_now: epoch.elapsed().as_millis() as _,
+            buffer: crate::collection::SList::new(),
+            buffer_len: 0,
         }
     }
 }
 
-impl<D: DriverTrait> CompletionPort<D> {
-    pub fn new(driver: &D) -> Self {
+impl CompletionPort {
+    pub fn new(driver: Driver) -> Self {
         Self(
             std::rc::Rc::new(CellType::new(CpInner::new(driver, *EPOCH))),
             crate::PhantomUnsync {},
@@ -50,11 +54,11 @@ impl<D: DriverTrait> CompletionPort<D> {
     cfg_if::cfg_if! {
         if #[cfg(debug_assertions)] {
             #[inline(always)]
-            fn inner_mut(&self) -> std::cell::RefMut<'_, CpInner<D>> {
+            fn inner_mut(&self) -> std::cell::RefMut<'_, CpInner> {
                 self.0.borrow_mut()
             }
             #[inline(always)]
-            fn inner(&self) -> std::cell::Ref<'_, CpInner<D>> {
+            fn inner(&self) -> std::cell::Ref<'_, CpInner> {
                 self.0.borrow()
             }
         } else {
@@ -86,12 +90,22 @@ impl<D: DriverTrait> CompletionPort<D> {
     #[inline(always)]
     pub fn submit(&self, mut req: Ptr<Request>) -> Handle {
         let hndl = Handle::new(&mut req);
-        self.inner().sender.submit(req);
+        {
+            let mut inner = self.inner_mut();
+            inner.buffer.push_front(req);
+            inner.buffer_len += 1;
+        }
         hndl
     }
 
     #[inline(always)]
     pub fn flush(&self) -> usize {
-        self.inner().sender.flush()
+        let flushed = self.inner().buffer_len;
+        if flushed > 0 {
+            let mut inner = self.inner_mut();
+            inner.buffer_len = 0;
+            self.inner().driver.submit(&mut inner.buffer);
+        }
+        flushed
     }
 }

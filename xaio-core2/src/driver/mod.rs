@@ -4,14 +4,18 @@ pub use dummy::*;
 
 use enum_dispatch::enum_dispatch;
 
-pub trait Sender: Clone + Debug {
-    fn submit(&self, req: crate::Ptr<crate::Request>);
-    fn flush(&self) -> usize;
-}
+use crate::{collection::SList, Request};
 
 #[enum_dispatch]
 pub trait DriverTrait: Clone + Debug {
-    type Sender: Sender;
+    // type Sender: Sender;
 
-    fn sender(&self) -> Self::Sender;
+    // fn sender(&self) -> Sender;
+    fn submit(&self, requests: &mut SList<Request>);
+}
+
+#[enum_dispatch(DriverTrait)]
+#[derive(Debug, Clone)]
+pub enum Driver {
+    DummyDriver,
 }

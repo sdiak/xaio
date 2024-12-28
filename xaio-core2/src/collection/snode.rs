@@ -1,8 +1,5 @@
-#![feature(associated_type_defaults)]
-
 use std::{
-    ops::{Deref, DerefMut},
-    ptr::NonNull,
+    fmt::Debug,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
@@ -14,6 +11,11 @@ pub trait SListNode: Sized {
 
 pub struct SLink {
     next: AtomicUsize,
+}
+impl Debug for SLink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SLink").finish_non_exhaustive()
+    }
 }
 /*
 impl<T> From<Ptr<T>> for *mut SLink
@@ -54,7 +56,7 @@ impl SLink {
     #[inline(always)]
     pub(crate) fn into<T: SListNode>(link: *mut SLink) -> Ptr<T> {
         let uptr = link as usize - T::OFFSET_OF_LINK;
-        unsafe { Ptr::from_raw(uptr as *mut T) }
+        unsafe { Ptr::from_raw_unchecked(uptr as *mut T) }
     }
 
     #[inline(always)]

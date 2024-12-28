@@ -66,6 +66,10 @@ impl<T: Sized> Ptr<T> {
         }
     }
 
+    pub fn new(value: T) -> Self {
+        Self::try_new(value).expect("Out of memory")
+    }
+
     /// Wraps an existing pointer
     ///
     /// # Parameters

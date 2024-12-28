@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, sync::atomic::Ordering};
+use std::{fmt::Debug, marker::PhantomData, sync::atomic::Ordering};
 
 use crate::Ptr;
 
@@ -8,6 +8,14 @@ pub struct SList<T: SListNode> {
     pub(crate) head: *mut SLink,
     pub(crate) tail: *mut SLink,
     pub(crate) _phantom: PhantomData<T>,
+}
+impl<T> Debug for SList<T>
+where
+    T: SListNode + Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
+    }
 }
 
 impl<T: SListNode> Drop for SList<T> {
@@ -233,7 +241,7 @@ impl<T: SListNode> SList<T> {
                     (*prev)
                         .list_update_next((*it).list_pop_next(Ordering::Relaxed), Ordering::Relaxed)
                 };
-                removed.push_back(unsafe { Ptr::from_raw(node as _) });
+                removed.push_back(unsafe { Ptr::from_raw_unchecked(node as _) });
                 if it == self.tail {
                     self.tail = prev;
                 }
@@ -294,10 +302,10 @@ mod test {
 
     #[test]
     fn test_simple() {
-        let mut a = Ptr::<IntNode>::new(IntNode::new(0)).unwrap();
-        let mut b = Ptr::<IntNode>::new(IntNode::new(1)).unwrap();
-        let mut c = Ptr::<IntNode>::new(IntNode::new(2)).unwrap();
-        let mut d = Ptr::<IntNode>::new(IntNode::new(3)).unwrap();
+        let mut a = Ptr::<IntNode>::new(IntNode::new(0));
+        let mut b = Ptr::<IntNode>::new(IntNode::new(1));
+        let mut c = Ptr::<IntNode>::new(IntNode::new(2));
+        let mut d = Ptr::<IntNode>::new(IntNode::new(3));
 
         let mut list = SList::<IntNode>::new();
 
@@ -350,9 +358,9 @@ mod test {
         // }
         // assert_eq!(iterator_count, 0);
 
-        list.push_back(Ptr::<IntNode>::new(IntNode::new(1)).unwrap());
-        list.push_back(Ptr::<IntNode>::new(IntNode::new(3)).unwrap());
-        list.push_back(Ptr::<IntNode>::new(IntNode::new(5)).unwrap());
+        list.push_back(Ptr::<IntNode>::new(IntNode::new(1)));
+        list.push_back(Ptr::<IntNode>::new(IntNode::new(3)));
+        list.push_back(Ptr::<IntNode>::new(IntNode::new(5)));
         let mut iterator_sum = 0i32;
         for e in list.iter() {
             iterator_sum += e.val;
@@ -370,9 +378,9 @@ mod test {
         // let mut removed = list.retain(|e| false);  // TODO: https://github.com/rust-lang/rust/issues/84605
         // assert!(list.is_empty());
         // assert!(removed.is_empty());
-        list.push_back(Ptr::<IntNode>::new(IntNode::new(1)).unwrap());
-        list.push_back(Ptr::<IntNode>::new(IntNode::new(3)).unwrap());
-        list.push_back(Ptr::<IntNode>::new(IntNode::new(5)).unwrap());
+        list.push_back(Ptr::<IntNode>::new(IntNode::new(1)));
+        list.push_back(Ptr::<IntNode>::new(IntNode::new(3)));
+        list.push_back(Ptr::<IntNode>::new(IntNode::new(5)));
         let mut removed = list.retain(|e| {
             e.val += 1;
             false
@@ -385,9 +393,9 @@ mod test {
 
         assert!(list.is_empty());
         assert!(removed.is_empty());
-        list.push_back(Ptr::<IntNode>::new(IntNode::new(1)).unwrap());
-        list.push_back(Ptr::<IntNode>::new(IntNode::new(3)).unwrap());
-        list.push_back(Ptr::<IntNode>::new(IntNode::new(5)).unwrap());
+        list.push_back(Ptr::<IntNode>::new(IntNode::new(1)));
+        list.push_back(Ptr::<IntNode>::new(IntNode::new(3)));
+        list.push_back(Ptr::<IntNode>::new(IntNode::new(5)));
         let mut removed = list.retain(|e| {
             e.val += 1;
             e.val > 2
@@ -400,11 +408,11 @@ mod test {
 
         assert!(list.is_empty());
         assert!(removed.is_empty());
-        list.push_back(Ptr::<IntNode>::new(IntNode::new(1)).unwrap());
-        list.push_back(Ptr::<IntNode>::new(IntNode::new(3)).unwrap());
-        list.push_back(Ptr::<IntNode>::new(IntNode::new(5)).unwrap());
-        list.push_back(Ptr::<IntNode>::new(IntNode::new(7)).unwrap());
-        list.push_back(Ptr::<IntNode>::new(IntNode::new(11)).unwrap());
+        list.push_back(Ptr::<IntNode>::new(IntNode::new(1)));
+        list.push_back(Ptr::<IntNode>::new(IntNode::new(3)));
+        list.push_back(Ptr::<IntNode>::new(IntNode::new(5)));
+        list.push_back(Ptr::<IntNode>::new(IntNode::new(7)));
+        list.push_back(Ptr::<IntNode>::new(IntNode::new(11)));
         let mut removed = list.retain(|e| {
             let retain = [3, 5, 7].contains(&e.val);
             e.val += 1;
@@ -421,10 +429,10 @@ mod test {
 
     #[test]
     fn test_move() {
-        let a = Ptr::<IntNode>::new(IntNode::new(0)).unwrap();
-        let b = Ptr::<IntNode>::new(IntNode::new(1)).unwrap();
-        let c = Ptr::<IntNode>::new(IntNode::new(2)).unwrap();
-        let d = Ptr::<IntNode>::new(IntNode::new(3)).unwrap();
+        let a = Ptr::<IntNode>::new(IntNode::new(0));
+        let b = Ptr::<IntNode>::new(IntNode::new(1));
+        let c = Ptr::<IntNode>::new(IntNode::new(2));
+        let d = Ptr::<IntNode>::new(IntNode::new(3));
         let mut list = SList::<IntNode>::from_node(a);
 
         assert!(!list.is_empty());
@@ -435,7 +443,7 @@ mod test {
         list.push_back(c);
         list.push_back(d);
 
-        let mut list2 = SList::<IntNode>::from_node(Ptr::<IntNode>::new(IntNode::new(-1)).unwrap());
+        let mut list2 = SList::<IntNode>::from_node(Ptr::<IntNode>::new(IntNode::new(-1)));
         list2.append(&mut list);
         assert!(list.is_empty());
         list2.append(&mut SList::<IntNode>::new());
@@ -446,11 +454,11 @@ mod test {
         assert!(list2.pop_back().unwrap().val == 0);
         assert!(list2.pop_back().unwrap().val == -1);
 
-        list.push_back(Ptr::<IntNode>::new(IntNode::new(1)).unwrap());
-        list.push_back(Ptr::<IntNode>::new(IntNode::new(2)).unwrap());
-        list.push_back(Ptr::<IntNode>::new(IntNode::new(3)).unwrap());
-        let mut list2 = SList::<IntNode>::from_node(Ptr::<IntNode>::new(IntNode::new(-1)).unwrap());
-        list2.push_back(Ptr::<IntNode>::new(IntNode::new(0)).unwrap());
+        list.push_back(Ptr::<IntNode>::new(IntNode::new(1)));
+        list.push_back(Ptr::<IntNode>::new(IntNode::new(2)));
+        list.push_back(Ptr::<IntNode>::new(IntNode::new(3)));
+        let mut list2 = SList::<IntNode>::from_node(Ptr::<IntNode>::new(IntNode::new(-1)));
+        list2.push_back(Ptr::<IntNode>::new(IntNode::new(0)));
         list.prepend(&mut list2);
         list.prepend(&mut SList::<IntNode>::new());
         assert!(list2.is_empty());
@@ -469,7 +477,7 @@ mod test {
         assert!(list.pop_back().unwrap().val == 0);
         assert!(list.pop_back().unwrap().val == -1);
 
-        let mut list = SList::<IntNode>::from_node(Ptr::<IntNode>::new(IntNode::new(42)).unwrap());
+        let mut list = SList::<IntNode>::from_node(Ptr::<IntNode>::new(IntNode::new(42)));
         let mut list2 = SList::<IntNode>::new();
         assert!(!list.is_empty());
         assert!(list2.is_empty());
@@ -482,10 +490,10 @@ mod test {
 
     #[test]
     fn test_push_back() {
-        let mut a = Ptr::<IntNode>::new(IntNode::new(0)).unwrap();
-        let mut b = Ptr::<IntNode>::new(IntNode::new(1)).unwrap();
-        let mut c = Ptr::<IntNode>::new(IntNode::new(2)).unwrap();
-        let mut d = Ptr::<IntNode>::new(IntNode::new(3)).unwrap();
+        let mut a = Ptr::<IntNode>::new(IntNode::new(0));
+        let mut b = Ptr::<IntNode>::new(IntNode::new(1));
+        let mut c = Ptr::<IntNode>::new(IntNode::new(2));
+        let mut d = Ptr::<IntNode>::new(IntNode::new(3));
         let mut list = SList::<IntNode>::new();
 
         assert!(list.is_empty());
@@ -501,19 +509,19 @@ mod test {
         assert!(list.pop_back().unwrap().val == 2);
         assert!(list.pop_back().unwrap().val == 1);
         assert!(list.pop_back().unwrap().val == 0);
-        list.push_back(Ptr::<IntNode>::new(IntNode::new(0)).unwrap());
-        list.push_back(Ptr::<IntNode>::new(IntNode::new(1)).unwrap());
+        list.push_back(Ptr::<IntNode>::new(IntNode::new(0)));
+        list.push_back(Ptr::<IntNode>::new(IntNode::new(1)));
         assert!(list.pop_back().unwrap().val == 1);
         assert!(list.pop_back().unwrap().val == 0);
 
         assert!(list.is_empty());
-        list.push_back(Ptr::<IntNode>::new(IntNode::new(0)).unwrap());
-        list.push_back(Ptr::<IntNode>::new(IntNode::new(1)).unwrap());
+        list.push_back(Ptr::<IntNode>::new(IntNode::new(0)));
+        list.push_back(Ptr::<IntNode>::new(IntNode::new(1)));
         assert!(!list.is_empty());
         list.clear();
         assert!(list.is_empty());
-        list.push_front(Ptr::<IntNode>::new(IntNode::new(0)).unwrap());
-        list.push_front(Ptr::<IntNode>::new(IntNode::new(1)).unwrap());
+        list.push_front(Ptr::<IntNode>::new(IntNode::new(0)));
+        list.push_front(Ptr::<IntNode>::new(IntNode::new(1)));
         drop(list);
     }
 }

@@ -1,12 +1,21 @@
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::{
+    mem::offset_of,
+    sync::atomic::{AtomicI32, Ordering},
+};
 
-use crate::Ptr;
+use crate::{collection::SListNode, Ptr};
 
 pub const PENDING: i32 = i32::MIN;
 
+#[derive(Debug)]
 pub struct Request {
     // port: &'static CompletionPort<>
+    link: crate::collection::SLink,
     status: AtomicI32,
+}
+
+impl SListNode for Request {
+    const OFFSET_OF_LINK: usize = offset_of!(Request, link);
 }
 
 #[repr(transparent)]
@@ -24,7 +33,9 @@ impl Drop for Handle {
             -libc::ECANCELED,
             Ordering::Relaxed,
             Ordering::Relaxed,
-        ) {}
+        ) {
+            // TODO: submit
+        }
     }
 }
 // pub type Callback = fn(Ptr<Request>) -> Option<Ptr<Request>>;
