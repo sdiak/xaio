@@ -1,5 +1,7 @@
 mod ptr;
 pub use ptr::Ptr;
+mod completion_port;
+pub use completion_port::*;
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
