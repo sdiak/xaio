@@ -47,12 +47,13 @@ impl DummyDriver {
     fn __thread_run(self) {
         let mut requests = SList::<Request>::new();
         loop {
-            self.0.queue.park(
-                || {
-                    //TODO:
-                },
-                &requests,
-            );
+            self.0
+                .queue
+                .park(|_: &mut SList<Request>| 0usize, &mut requests);
+            while let Some(req) = requests.pop_front() {
+                // TODO:
+                todo!()
+            }
         }
     }
 }
