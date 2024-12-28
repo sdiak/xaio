@@ -267,6 +267,7 @@ impl<'a, T: SListNode> Iterator for SListIter<'a, T> {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod test {
     use super::*;
 
@@ -338,6 +339,84 @@ mod test {
         assert!(list.is_empty());
         assert!(list.front().is_none());
         assert!(list.back().is_none());
+    }
+
+    #[test]
+    fn test_iter() {
+        let mut list = SList::<IntNode>::new();
+        let mut iterator_count = 0usize;
+        // for e in list.iter() { // TODO: https://github.com/rust-lang/rust/issues/84605
+        //     iterator_count += 1;
+        // }
+        // assert_eq!(iterator_count, 0);
+
+        list.push_back(Uniq::<IntNode>::new(IntNode::new(1)).unwrap());
+        list.push_back(Uniq::<IntNode>::new(IntNode::new(3)).unwrap());
+        list.push_back(Uniq::<IntNode>::new(IntNode::new(5)).unwrap());
+        let mut iterator_sum = 0i32;
+        for e in list.iter() {
+            iterator_sum += e.val;
+            iterator_count += 1;
+        }
+        assert_eq!(iterator_count, 3);
+        assert_eq!(iterator_sum, 9);
+    }
+
+    #[test]
+    fn test_retain() {
+        let mut list = SList::<IntNode>::new();
+        assert!(list.is_empty());
+
+        // let mut removed = list.retain(|e| false);  // TODO: https://github.com/rust-lang/rust/issues/84605
+        // assert!(list.is_empty());
+        // assert!(removed.is_empty());
+        list.push_back(Uniq::<IntNode>::new(IntNode::new(1)).unwrap());
+        list.push_back(Uniq::<IntNode>::new(IntNode::new(3)).unwrap());
+        list.push_back(Uniq::<IntNode>::new(IntNode::new(5)).unwrap());
+        let mut removed = list.retain(|e| {
+            e.val += 1;
+            false
+        });
+        assert!(list.is_empty());
+        assert!(!removed.is_empty());
+        assert_eq!(removed.pop_front().unwrap().val, 2);
+        assert_eq!(removed.pop_front().unwrap().val, 4);
+        assert_eq!(removed.pop_front().unwrap().val, 6);
+
+        assert!(list.is_empty());
+        assert!(removed.is_empty());
+        list.push_back(Uniq::<IntNode>::new(IntNode::new(1)).unwrap());
+        list.push_back(Uniq::<IntNode>::new(IntNode::new(3)).unwrap());
+        list.push_back(Uniq::<IntNode>::new(IntNode::new(5)).unwrap());
+        let mut removed = list.retain(|e| {
+            e.val += 1;
+            e.val > 2
+        });
+        assert!(!list.is_empty());
+        assert!(!removed.is_empty());
+        assert_eq!(removed.pop_front().unwrap().val, 2);
+        assert_eq!(list.pop_front().unwrap().val, 4);
+        assert_eq!(list.pop_front().unwrap().val, 6);
+
+        assert!(list.is_empty());
+        assert!(removed.is_empty());
+        list.push_back(Uniq::<IntNode>::new(IntNode::new(1)).unwrap());
+        list.push_back(Uniq::<IntNode>::new(IntNode::new(3)).unwrap());
+        list.push_back(Uniq::<IntNode>::new(IntNode::new(5)).unwrap());
+        list.push_back(Uniq::<IntNode>::new(IntNode::new(7)).unwrap());
+        list.push_back(Uniq::<IntNode>::new(IntNode::new(11)).unwrap());
+        let mut removed = list.retain(|e| {
+            let retain = [3, 5, 7].contains(&e.val);
+            e.val += 1;
+            retain
+        });
+        assert!(!list.is_empty());
+        assert!(!removed.is_empty());
+        assert_eq!(removed.pop_front().unwrap().val, 2);
+        assert_eq!(removed.pop_front().unwrap().val, 12);
+        assert_eq!(list.pop_front().unwrap().val, 4);
+        assert_eq!(list.pop_front().unwrap().val, 6);
+        assert_eq!(list.pop_front().unwrap().val, 8);
     }
 
     #[test]

@@ -73,7 +73,7 @@ impl<T: SListNode, U: Unpark> Queue<T, U> {
     }
 
     #[inline]
-    #[cfg_attr(coverage, coverage(off))]
+    // #[cfg_attr(coverage, coverage(off))]
     fn __check_current_thread(&self) {
         if self.owner_thread_id != ThreadId::current() {
             // Mostly for c-binding
@@ -85,7 +85,7 @@ impl<T: SListNode, U: Unpark> Queue<T, U> {
     }
 
     #[inline(always)]
-    #[cfg_attr(coverage, coverage(off))]
+    // #[cfg_attr(coverage, coverage(off))]
     fn __check_park_bit(&self, old_tail: usize) {
         debug_assert!(
             old_tail != PARK_BIT,

@@ -87,7 +87,7 @@ impl<T: SListNode> BufferedSender<T> {
 unsafe impl<T: SListNode> Send for BufferedSender<T> {}
 
 impl<T: SListNode> Receiver<T> {
-    #[cfg_attr(coverage, coverage(off))]
+    // #[cfg_attr(coverage, coverage(off))]
     pub fn try_new(target: Unparker) -> Result<Self> {
         use std::panic::AssertUnwindSafe;
         Ok(crate::catch_enomem(AssertUnwindSafe(move || {
@@ -166,7 +166,7 @@ impl<T: SListNode> Inner<T> {
     }
 
     #[inline]
-    #[cfg_attr(coverage, coverage(off))]
+    // #[cfg_attr(coverage, coverage(off))]
     fn check_current_thread(&self, method: &str) {
         if self.owner_thread_id != ThreadId::current() {
             // Mostly for c-binding
@@ -178,7 +178,7 @@ impl<T: SListNode> Inner<T> {
         }
     }
     #[inline]
-    #[cfg_attr(coverage, coverage(off))]
+    // #[cfg_attr(coverage, coverage(off))]
     fn check_park_bit(&self, old_tail: usize) {
         debug_assert!(
             old_tail != PARK_BIT,
