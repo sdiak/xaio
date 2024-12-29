@@ -1,8 +1,8 @@
-use std::{mem::offset_of, ptr::NonNull, rc::Rc, sync::Arc, time};
+use std::rc::Rc;
 
 use crate::{
-    collection::{smpsc::Queue, SLink, SList, SListNode},
-    driver::{self, Driver, DriverTrait},
+    collection::SList,
+    driver::{Driver, DriverTrait},
     Handle, Ptr, Request,
 };
 
@@ -149,34 +149,6 @@ impl CompletionPort {
     }
 }
 
-pub(crate) trait Park {
-    fn park(&self, timeout_ms: i32);
-    fn unpark(&self);
-}
-
-pub(crate) struct ConcurrentReadyQueue<P: Park> {
-    parker: P,
-    queue: Queue<Request>,
-}
-impl<P: Park> ConcurrentReadyQueue<P> {
-    pub(crate) fn submit(&self, requests: &mut SList<Request>) {
-        if self.queue.append(requests) {
-            self.parker.unpark();
-        }
-    }
-    pub(crate) fn wait(&self, ready_sink: &mut SList<Request>, mut timeout_ms: i32) -> usize {
-        self.queue.park(
-            |available| {
-                if available.is_empty() {
-                    // std::thread::park_timeout(std::time::Duration::from_millis(timeout_ms as u64));
-                    self.parker.park(timeout_ms);
-                }
-                0
-            },
-            ready_sink,
-        )
-    }
-}
 // struct CompletionPortSenderInner {
 //     ready: crate::collection::SList<crate::Request>,
 //     ready_len: usize,

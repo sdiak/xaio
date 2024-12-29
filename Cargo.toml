@@ -3,7 +3,7 @@
 members = [ "libdir",
     "xaio-core2",
     "xaio-core",
-    "xaio-future",
+    "xaio-future", "coro",
 ]
 resolver = "2"
 
