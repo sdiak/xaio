@@ -19,7 +19,13 @@ unsafe impl Send for Ptr<Request> {}
 
 impl Request {
     pub(crate) fn completion_port(&self) -> &crate::CompletionPort {
+        // Safety: when a request is submited to a completion port,
+        // CompletionPort reference-count is incremented by one by the owner thread in `CompletionPort::submit`
         unsafe { &*(self.completion_port as *const crate::CompletionPort) }
+    }
+
+    pub(crate) fn is_pending(&self) -> bool {
+        self.status.load(Ordering::Relaxed) == PENDING
     }
 
     #[inline(always)]
@@ -33,12 +39,11 @@ impl Request {
             ptr.completion_port().cancel_hint(ptr);
         }
     }
-    pub(crate) fn done(ptr: Ptr<Request>, status: i32) {
+    pub(crate) fn set_status_from_driver(&mut self, status: i32) {
         // Pending becomes unknown
         let status = status + ((status == PENDING) as i32);
         // We don't care if a cancelled task succeed, so we do not use CAS ; just a plain store
-        ptr.status.store(status, Ordering::Relaxed);
-        todo!("Queue to completion port");
+        self.status.store(status, Ordering::Relaxed);
     }
 }
 

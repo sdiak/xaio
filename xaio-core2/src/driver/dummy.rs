@@ -1,9 +1,6 @@
 use std::sync::Arc;
 
-use crate::{
-    collection::{smpsc, SList},
-    Request,
-};
+use crate::{collection::SList, sync::Queue, Request};
 
 fn create_singleton() -> DummyDriver {
     let (tx, rx) = std::sync::mpsc::sync_channel::<DummyDriver>(1);
@@ -25,15 +22,14 @@ pub struct DummyDriver(Arc<Inner>);
 #[derive(Debug)]
 struct Inner {
     thread: std::thread::Thread,
-    queue: smpsc::Queue<Request, crate::ThreadUnpark>,
+    queue: Queue<Request>,
 }
 impl Inner {
     fn new() -> Self {
-        todo!()
-        // Self {
-        //     thread: std::thread::current(),
-        //     queue: smpsc::Queue::new(unpark)
-        // }
+        Self {
+            thread: std::thread::current(),
+            queue: Queue::new(),
+        }
     }
 }
 
@@ -45,14 +41,22 @@ impl DummyDriver {
         Self(Arc::new(Inner::new()))
     }
     fn __thread_run(self) {
+        let mut batcher = super::DriverCompletionPortBatcher::new();
         let mut requests = SList::<Request>::new();
         loop {
-            self.0
-                .queue
-                .park(|_: &mut SList<Request>| 0usize, &mut requests);
+            self.0.queue.park(
+                |todo: &mut SList<Request>| {
+                    if todo.is_empty() {
+                        std::thread::park();
+                    }
+                    0
+                },
+                &mut requests,
+            );
             while let Some(req) = requests.pop_front() {
-                Request::done(req, -libc::ENOSYS);
+                batcher.push(req, -libc::ENOSYS);
             }
+            batcher.finish();
         }
     }
 }

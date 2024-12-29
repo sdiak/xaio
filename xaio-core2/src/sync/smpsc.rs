@@ -1,25 +1,19 @@
 use std::fmt::Debug;
-use std::io::Result;
 use std::marker::PhantomData;
-use std::num::NonZero;
-use std::ptr::NonNull;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
 
-use crate::Unparker;
-use crate::{sys::ThreadId, Unpark};
+use crate::sys::ThreadId;
 
-use super::{SLink, SList, SListNode};
+use crate::collection::{SLink, SList, SListNode};
 
 const PARK_BIT: usize = 1;
-pub struct Queue<T: SListNode, U: Unpark> {
+pub struct Queue<T: SListNode> {
     owner_thread_id: ThreadId,
     tail: AtomicUsize,
-    unpark: U,
     _phantom: PhantomData<T>,
 }
-impl<T: SListNode, U: Unpark> Debug for Queue<T, U> {
+impl<T: SListNode> Debug for Queue<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Queue")
             .field("owner_thread_id", &self.owner_thread_id)
@@ -27,12 +21,11 @@ impl<T: SListNode, U: Unpark> Debug for Queue<T, U> {
     }
 }
 
-impl<T: SListNode, U: Unpark> Queue<T, U> {
-    pub fn new(unpark: U) -> Self {
+impl<T: SListNode> Queue<T> {
+    pub fn new() -> Self {
         Self {
             owner_thread_id: ThreadId::current(),
             tail: AtomicUsize::new(0),
-            unpark,
             _phantom: PhantomData::<T> {},
         }
     }
@@ -60,11 +53,7 @@ impl<T: SListNode, U: Unpark> Queue<T, U> {
                 Ordering::Acquire,
             ) {
                 Ok(_) => {
-                    if old_tail == PARK_BIT {
-                        self.unpark.unpark();
-                        return true;
-                    }
-                    return false;
+                    return old_tail == PARK_BIT;
                 }
                 Err(t) => {
                     old_tail = t;

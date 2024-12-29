@@ -1,4 +1,7 @@
+use std::{mem::offset_of, ptr::NonNull, rc::Rc, sync::Arc, time};
+
 use crate::{
+    collection::{smpsc::Queue, SLink, SList, SListNode},
     driver::{self, Driver, DriverTrait},
     Handle, Ptr, Request,
 };
@@ -29,6 +32,8 @@ struct CpInner {
     cached_now: u64,
     buffer: crate::collection::SList<crate::Request>,
     buffer_len: usize,
+    ready: crate::collection::SList<crate::Request>,
+    ready_len: usize,
 }
 
 impl CpInner {
@@ -39,6 +44,8 @@ impl CpInner {
             cached_now: epoch.elapsed().as_millis() as _,
             buffer: crate::collection::SList::new(),
             buffer_len: 0,
+            ready: crate::collection::SList::new(),
+            ready_len: 0,
         }
     }
 }
@@ -89,6 +96,8 @@ impl CompletionPort {
 
     #[inline(always)]
     pub fn submit(&self, mut req: Ptr<Request>) -> Handle {
+        // Increment reference count for every live requests
+        unsafe { Rc::increment_strong_count(self as *const Self) };
         let hndl = Handle::new(&mut req);
         {
             let mut inner = self.inner_mut();
@@ -98,11 +107,37 @@ impl CompletionPort {
         hndl
     }
 
+    // pub fn wait(&self, ready: &mut SList<Request>, timeout_ms: i32) -> usize {
+    //     self.flush();
+    //     let mut inner = self.inner_mut();
+    //     if inner.ready_len > 0 {
+    //         ready.append(&mut inner.ready);
+    //         let len = inner.ready_len;
+    //         inner.ready_len = 0;
+    //         len
+    //     } else {
+    //         drop(inner);
+    //         self.inner().driver.
+    //         todo!()
+    //         0
+    //     }
+    // }
+
+    pub(crate) fn done(&self, requests: &mut SList<Request>, len: usize) {
+        for i in 0..len {
+            // Decrement reference count for every done requests
+            unsafe { Rc::decrement_strong_count(self as *const Self) };
+        }
+        let mut inner = self.inner_mut();
+        inner.ready.append(requests);
+        inner.ready_len += len;
+    }
+
     pub(crate) fn cancel_hint(&self, req: &Ptr<Request>) {
         todo!()
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn flush(&self) -> usize {
         let flushed = self.inner().buffer_len;
         if flushed > 0 {
@@ -113,3 +148,40 @@ impl CompletionPort {
         flushed
     }
 }
+
+pub(crate) trait Park {
+    fn park(&self, timeout_ms: i32);
+    fn unpark(&self);
+}
+
+pub(crate) struct ConcurrentReadyQueue<P: Park> {
+    parker: P,
+    queue: Queue<Request>,
+}
+impl<P: Park> ConcurrentReadyQueue<P> {
+    pub(crate) fn submit(&self, requests: &mut SList<Request>) {
+        if self.queue.append(requests) {
+            self.parker.unpark();
+        }
+    }
+    pub(crate) fn wait(&self, ready_sink: &mut SList<Request>, mut timeout_ms: i32) -> usize {
+        self.queue.park(
+            |available| {
+                if available.is_empty() {
+                    // std::thread::park_timeout(std::time::Duration::from_millis(timeout_ms as u64));
+                    self.parker.park(timeout_ms);
+                }
+                0
+            },
+            ready_sink,
+        )
+    }
+}
+// struct CompletionPortSenderInner {
+//     ready: crate::collection::SList<crate::Request>,
+//     ready_len: usize,
+// }
+// struct CompletionPortSender {
+//     ready: crate::collection::SList<crate::Request>,
+//     ready_len: usize,
+// }
