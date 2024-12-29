@@ -36,11 +36,11 @@ impl<T: Task> Future<T> {
     //         State::Paniced => panic!("Producer paniced"),
     //     }
     // // }
-    pub fn wait(self) -> T::Output {
-        unsafe { &*self.producer.as_ref().get() }.wait()
-        // self.producer.into_inner()
-        // unsafe { self.output.assume_init() }
-    }
+    // pub fn wait(self) -> T::Output {
+    //     unsafe { &*self.producer.as_ref().get() }.wait()
+    //     // self.producer.into_inner()
+    //     // unsafe { self.output.assume_init() }
+    // }
 }
 /*
 #[derive(Debug)]
