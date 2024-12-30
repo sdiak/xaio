@@ -66,4 +66,18 @@ impl ContextList {
             None
         }
     }
+
+    pub(super) fn remove(&mut self, mut cx: NonNull<Context>) {
+        let cx = unsafe { cx.as_mut() };
+        debug_assert!(cx.list_prev.is_some() || cx.list_next.is_some());
+        if cx.list_prev.is_none() {
+            self.pop_front();
+        } else if cx.list_next.is_none() {
+            self.pop_back();
+        } else {
+            let prev = unsafe { cx.list_prev.unwrap_unchecked() };
+            let next = unsafe { cx.list_prev.unwrap_unchecked() };
+            // prev.
+        }
+    }
 }
