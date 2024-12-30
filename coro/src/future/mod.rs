@@ -57,6 +57,42 @@ impl<'a, T: Send> FutureInner<'a, T> {
             _lifetime: PhantomData {},
         }
     }
+    pub(crate) fn set_listener(
+        &'a self,
+        listener: &'a FutureListenerErased,
+    ) -> std::io::Result<bool> {
+        let listener = listener as *const FutureListenerErased as usize;
+        debug_assert!((listener & 3) == 0, "Alignement allows tags");
+        let mut listener_and_state = self.listener_and_state.load(Ordering::Relaxed);
+        let mut state = unsafe { std::mem::transmute::<u8, State>((listener_and_state & 3) as u8) };
+        loop {
+            match state {
+                State::Pending => {
+                    if (listener_and_state & !3) != 0 {
+                        return Err(std::io::Error::from(std::io::ErrorKind::ResourceBusy));
+                    }
+                    match self.listener_and_state.compare_exchange(
+                        listener_and_state,
+                        (listener_and_state & 3) | listener,
+                        Ordering::Release,
+                        Ordering::Relaxed,
+                    ) {
+                        Ok(_) => return Ok(true),
+                        Err(x) => {
+                            listener_and_state = x;
+                            state = unsafe {
+                                std::mem::transmute::<u8, State>((listener_and_state & 3) as u8)
+                            };
+                        }
+                    }
+                }
+                State::Cancelled => return Ok(false),
+                State::Ready => return Ok(false),
+                State::Paniced => return Ok(false),
+            }
+        }
+    }
+
     pub(crate) fn state(&self, order: Ordering) -> State {
         unsafe { std::mem::transmute::<u8, State>((self.listener_and_state.load(order) & 3) as u8) }
     }
