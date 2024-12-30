@@ -57,13 +57,14 @@ impl<'a, T: Send> FutureInner<'a, T> {
             _lifetime: PhantomData {},
         }
     }
+
     pub(crate) fn set_listener(
         &'a self,
         listener: &'a FutureListenerErased,
     ) -> std::io::Result<bool> {
         let listener = listener as *const FutureListenerErased as usize;
         debug_assert!((listener & 3) == 0, "Alignement allows tags");
-        let mut listener_and_state = self.listener_and_state.load(Ordering::Relaxed);
+        let mut listener_and_state = self.listener_and_state.load(Ordering::Acquire);
         let mut state = unsafe { std::mem::transmute::<u8, State>((listener_and_state & 3) as u8) };
         loop {
             match state {
@@ -75,7 +76,7 @@ impl<'a, T: Send> FutureInner<'a, T> {
                         listener_and_state,
                         (listener_and_state & 3) | listener,
                         Ordering::Release,
-                        Ordering::Relaxed,
+                        Ordering::Acquire,
                     ) {
                         Ok(_) => return Ok(true),
                         Err(x) => {
@@ -89,6 +90,27 @@ impl<'a, T: Send> FutureInner<'a, T> {
                 State::Cancelled => return Ok(false),
                 State::Ready => return Ok(false),
                 State::Paniced => return Ok(false),
+            }
+        }
+    }
+
+    pub(crate) fn rem_listener(&'a self, listener: &'a FutureListenerErased) -> bool {
+        let listener = listener as *const FutureListenerErased as usize;
+        debug_assert!((listener & 3) == 0, "Alignement allows tags");
+        match self.listener_and_state.compare_exchange(
+            listener | State::Pending as u8 as usize,
+            State::Pending as u8 as usize,
+            Ordering::Release,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => return true,
+            Err(listener_and_state) => {
+                match unsafe { std::mem::transmute::<u8, State>((listener_and_state & 3) as u8) } {
+                    State::Pending if ((listener_and_state & !3usize) != 0) => {
+                        crate::die("Another listener is registered")
+                    }
+                    _ => return false,
+                }
             }
         }
     }
