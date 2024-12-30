@@ -11,8 +11,8 @@ thread_local! { static CURRENT: Option<TaskBox> = const { None }; }
 #[derive(Debug)]
 pub struct TaskBox(Ptr<UnsafeCell<TaskInnerErazed>>);
 
-pub(crate) unsafe fn __spawn<T: Task>(task: T) -> Option<(TaskBox, Ptr<UnsafeCell<TaskInner<T>>>)> {
-    TaskInner::try_new(task).map(|(a, b)| (TaskBox(a), b))
+pub(crate) unsafe fn __spawn<T: Task>(task: T) -> Option<(TaskBox, crate::future::Future<T>)> {
+    TaskInner::try_new(task).map(|(a, b)| (TaskBox(a), crate::future::Future::new(b)))
 }
 
 impl TaskBox {
@@ -50,7 +50,7 @@ struct TaskInnerErazed {
 pub(crate) struct TaskInner<T: Task> {
     as_inner: TaskInnerErazed,
     task: T,
-    output: MaybeUninit<T::Output>,
+    output: Option<T::Output>,
 }
 
 impl<T: Task> TaskInner<T> {
@@ -67,16 +67,21 @@ impl<T: Task> TaskInner<T> {
     pub(crate) fn state(&self, order: std::sync::atomic::Ordering) -> State {
         self.as_inner.context.state(order)
     }
-    pub(crate) fn wait(self) -> T::Output {
+    pub(crate) unsafe fn take(&mut self) -> T::Output {
+        assert!(self.state(std::sync::atomic::Ordering::Relaxed) == State::Ready);
+        unsafe { self.output.take().unwrap_unchecked() }
+    }
+    pub(crate) fn wait(mut thiz: Ptr<UnsafeCell<TaskInner<T>>>) -> T::Output {
+        let thiz = (*thiz).get_mut();
         loop {
-            match self.state(std::sync::atomic::Ordering::Acquire) {
+            match thiz.state(std::sync::atomic::Ordering::Acquire) {
                 State::Pending => {
                     std::thread::park();
                 }
                 State::Cancelling => {
                     std::thread::park();
                 }
-                State::Ready => return unsafe { self.output.assume_init() },
+                State::Ready => return thiz.output.take().unwrap(),
                 State::Paniced => panic!("Producer paniced"),
             }
         }
@@ -104,7 +109,7 @@ impl<T: Task> TaskInner<T> {
                             parent, // Safety child always ends after parent. TODO: handle orphan
                         },
                         task,
-                        output: MaybeUninit::uninit(),
+                        output: None,
                     }))
                 };
             });
@@ -136,7 +141,7 @@ impl<T: Task> TaskInner<T> {
             Ok(poll) => {
                 if let Some(o) = poll {
                     // TODO: catch_unwind
-                    thiz.output.write(o);
+                    thiz.output = Some(o);
                     thiz.as_inner
                         .context
                         .state

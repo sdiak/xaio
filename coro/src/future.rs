@@ -24,6 +24,13 @@ pub enum State {
 }
 
 impl<T: Task> Future<T> {
+    pub(crate) fn new(producer: Ptr<UnsafeCell<TaskInner<T>>>) -> Self {
+        Self {
+            producer,
+            _unsend: PhantomUnsend {},
+            _unsync: PhantomUnsync {},
+        }
+    }
     pub fn state(&self, order: Ordering) -> State {
         unsafe { &*self.producer.as_ref().get() }.state(order)
     }
@@ -36,11 +43,21 @@ impl<T: Task> Future<T> {
     //         State::Paniced => panic!("Producer paniced"),
     //     }
     // // }
-    // pub fn wait(self) -> T::Output {
-    //     unsafe { &*self.producer.as_ref().get() }.wait()
-    //     // self.producer.into_inner()
-    //     // unsafe { self.output.assume_init() }
-    // }
+    pub fn wait(mut self) -> T::Output {
+        let inner = unsafe { &mut *self.producer.as_mut().get() };
+        loop {
+            match self.state(Ordering::Acquire) {
+                State::Pending => {
+                    std::thread::park();
+                }
+                State::Cancelling => {
+                    std::thread::park();
+                }
+                State::Ready => return unsafe { inner.take() },
+                State::Paniced => panic!("Producer paniced"),
+            }
+        }
+    }
 }
 /*
 #[derive(Debug)]
