@@ -62,50 +62,19 @@ impl<'a, T: Send> FutureInner<'a, T> {
     }
 
     pub(crate) fn cancel(thiz: Ptr<Self>) {
-        let listener_and_state = thiz.listener_and_state.load(Ordering::Acquire);
+        let listener_and_state = thiz
+            .listener_and_state
+            .swap(State::Cancelled as u8 as usize, Ordering::AcqRel);
         let state = unsafe { std::mem::transmute::<u8, State>((listener_and_state & 3) as u8) };
         match state {
             State::Pending => {
-                let status = thiz.listener_and_state.compare_exchange(
-                    listener_and_state,
-                    State::Cancelled as u8 as usize,
-                    Ordering::Release,
-                    Ordering::Acquire,
-                );
-                match status {
-                    Ok(_) => {
-                        // Cancelation registered, producer will drop `thiz`
-                        std::mem::forget(thiz);
-                    }
-                    Err(listener_and_state) => {
-                        let state = unsafe {
-                            std::mem::transmute::<u8, State>((listener_and_state & 3) as u8)
-                        };
-                        match state {
-                            State::Pending => {
-                                crate::die("Unreachable state");
-                            }
-                            State::Cancelled => {
-                                crate::die("Concurrent cancellation");
-                            }
-                            State::Ready => {
-                                // Already done, drop `value` and `thiz`
-                                unsafe {
-                                    (&mut *thiz.value.get()).assume_init_drop();
-                                };
-                            }
-                            State::Paniced => {
-                                // Paniced, drop `value` and `thiz`
-                                unsafe {
-                                    (&mut *thiz.value.get()).assume_init_drop();
-                                };
-                                panic!("Future paniced");
-                            }
-                        }
-                    }
-                }
+                // Cancelation registered, producer will drop `thiz`
+                std::mem::forget(thiz);
             }
-            State::Cancelled => {}
+            State::Cancelled => {
+                // Already cancelled
+                log::warn!("Future cancelled multiple times");
+            }
             State::Ready => {
                 // Already done, drop `value` and `thiz`
                 unsafe {
