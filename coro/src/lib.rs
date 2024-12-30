@@ -1,3 +1,7 @@
+pub(crate) mod collection;
+pub(crate) mod sync;
+pub(crate) mod sys;
+
 pub mod future;
 pub mod ptr;
 pub mod scheduler;
@@ -11,17 +15,30 @@ pub type PhantomUnsend = std::marker::PhantomData<std::sync::MutexGuard<'static,
 /// It starts pending until the producer resolves it.
 /// The consumer is responsible to drop it unless if it dropped it
 struct SharedFuture {}
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+
+fn catch_enomem<C, T>(constructor: C) -> std::io::Result<T>
+where
+    C: FnOnce() -> T + std::panic::UnwindSafe,
+{
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(constructor))
+        .map_err(|_| std::io::Error::from(std::io::ErrorKind::OutOfMemory))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+pub trait Unpark {
+    fn unpark(&self);
+}
+// #[derive(Clone)]
+pub struct Unparker {
+    target: Box<dyn Unpark>,
+}
+impl Unparker {
+    pub fn new<U: Unpark + std::panic::UnwindSafe + Send + Sync + Clone + 'static>(
+        target: U,
+    ) -> Self {
+        Self {
+            target: Box::new(target),
+        }
+    }
+    pub fn unpark(&self) {
+        self.target.unpark();
     }
 }

@@ -127,24 +127,33 @@ impl<T: Sized> Ptr<T> {
     ///  Only usable for `Uniq<T>` built with `Uniq<T>::from_raw(...)`
     #[inline]
     pub unsafe fn into_raw_unchecked(mut self) -> *mut T {
-        let raw = self.as_ptr();
+        let raw = self.as_mut_ptr();
         std::mem::forget(self);
         raw
     }
 
-    /// Consumes `self` and returns it as a raw pointer
+    /// Returns the address of the value
     ///
     /// # Safety
     ///  Borrow rules and lifetime must be handled by the caller
     #[inline(always)]
-    pub unsafe fn as_ptr(&mut self) -> *mut T {
+    pub unsafe fn as_mut_ptr(&mut self) -> *mut T {
+        (self.0 & !ALLOCATED_TAG) as _
+    }
+
+    /// Returns the address of the value
+    ///
+    /// # Safety
+    ///  Borrow rules and lifetime must be handled by the caller
+    #[inline(always)]
+    pub unsafe fn as_ptr(&self) -> *const T {
         (self.0 & !ALLOCATED_TAG) as _
     }
 
     /// Returns a mutable reference to the pointee
     #[inline(always)]
     pub fn as_mut<'a>(&'a mut self) -> &'a mut T {
-        unsafe { &mut *self.as_ptr() }
+        unsafe { &mut *self.as_mut_ptr() }
     }
 
     /// Returns a reference to the pointee
@@ -180,7 +189,7 @@ impl<T: Sized> Drop for Ptr<T> {
     fn drop(&mut self) {
         if (self.0 & ALLOCATED_TAG) != 0 {
             unsafe {
-                let ptr = self.as_ptr();
+                let ptr = self.as_mut_ptr();
                 std::ptr::drop_in_place(ptr);
                 dealloc(ptr as _, Self::LAYOUT);
             }

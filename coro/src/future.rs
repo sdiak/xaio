@@ -3,7 +3,8 @@ use crate::task::{Task, TaskInner};
 use crate::{PhantomUnsend, PhantomUnsync};
 use std::borrow::Borrow;
 use std::io::Result;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::mem::ManuallyDrop;
+use std::sync::atomic::{AtomicI32, AtomicU8, Ordering};
 use std::time::Duration;
 use std::{cell::UnsafeCell, mem::MaybeUninit, ptr::NonNull, rc::Rc, sync::atomic::AtomicUsize};
 
@@ -21,6 +22,50 @@ pub enum State {
     Cancelling = 1,
     Ready = 2,
     Paniced = 3,
+}
+
+pub trait FutureListener: Send {
+    fn notify(&self, token: usize);
+}
+pub(crate) struct FutureInner<T: Send, L: FutureListener> {
+    state: AtomicU8,
+    // link: crate::collection::SLink,
+    listener: L,
+    value: UnsafeCell<MaybeUninit<T>>,
+}
+// impl<T: Send, L: FutureListener> crate::collection::SListNode for FutureInner<T, L> {
+//     const OFFSET_OF_LINK: usize = std::mem::offset_of!(FutureInner<T, L>, link);
+// }
+impl<T: Send, L: FutureListener> FutureInner<T, L> {
+    pub(crate) fn state(&self, order: Ordering) -> State {
+        unsafe { std::mem::transmute::<u8, State>(self.state.load(order)) }
+    }
+
+    pub(crate) fn resolve(thiz: Ptr<Self>, value: T) {
+        assert!(thiz.state(Ordering::Relaxed) == State::Pending);
+        // Perform the write
+        unsafe { (&mut *thiz.value.get()).as_mut_ptr().write(value) };
+        // Commit the write
+        match thiz.state.compare_exchange(
+            State::Pending as u8,
+            State::Ready as u8,
+            Ordering::Release,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => {
+                thiz.listener.notify(unsafe { thiz.as_ptr() } as usize);
+                // The listener will drop `thiz`
+                std::mem::forget(thiz);
+            }
+            Err(c) => {
+                assert!(c == State::Cancelling as u8);
+                // Cancelled, drop `value` and `thiz`
+                unsafe {
+                    (&mut *thiz.value.get()).assume_init_drop();
+                }
+            }
+        }
+    }
 }
 
 impl<T: Task> Future<T> {
