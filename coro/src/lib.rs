@@ -42,3 +42,9 @@ impl Unparker {
         self.target.unpark();
     }
 }
+
+pub(crate) fn die(message: &str) -> ! {
+    log::error!("{}, aborting.", message);
+    eprintln!("{}, aborting.", message);
+    std::process::abort();
+}

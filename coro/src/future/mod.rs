@@ -34,7 +34,23 @@ pub(crate) struct FutureInner<'a, T: Send> {
 //     const OFFSET_OF_LINK: usize = std::mem::offset_of!(FutureInner<T, L>, link);
 // }
 impl<'a, T: Send> FutureInner<'a, T> {
-    pub fn ready(val: T) -> Self {
+    pub(crate) fn pending_with_listener(listener: &'a FutureListenerErased) -> Self {
+        let listener = listener as *const FutureListenerErased as usize;
+        debug_assert!((listener & 3) == 0, "Alignement allows tags");
+        Self {
+            listener_and_state: AtomicUsize::new((State::Pending as u8 as usize) | listener),
+            value: UnsafeCell::new(MaybeUninit::uninit()),
+            _lifetime: PhantomData {},
+        }
+    }
+    pub(crate) fn pending() -> Self {
+        Self {
+            listener_and_state: AtomicUsize::new(State::Ready as u8 as _),
+            value: UnsafeCell::new(MaybeUninit::uninit()),
+            _lifetime: PhantomData {},
+        }
+    }
+    pub(crate) fn ready(val: T) -> Self {
         Self {
             listener_and_state: AtomicUsize::new(State::Ready as u8 as _),
             value: UnsafeCell::new(MaybeUninit::new(val)),
@@ -43,6 +59,67 @@ impl<'a, T: Send> FutureInner<'a, T> {
     }
     pub(crate) fn state(&self, order: Ordering) -> State {
         unsafe { std::mem::transmute::<u8, State>((self.listener_and_state.load(order) & 3) as u8) }
+    }
+
+    pub(crate) fn cancel(thiz: Ptr<Self>) {
+        let listener_and_state = thiz.listener_and_state.load(Ordering::Acquire);
+        let state = unsafe { std::mem::transmute::<u8, State>((listener_and_state & 3) as u8) };
+        match state {
+            State::Pending => {
+                let status = thiz.listener_and_state.compare_exchange(
+                    listener_and_state,
+                    State::Cancelled as u8 as usize,
+                    Ordering::Release,
+                    Ordering::Acquire,
+                );
+                match status {
+                    Ok(_) => {
+                        // Cancelation registered, producer will drop `thiz`
+                        std::mem::forget(thiz);
+                    }
+                    Err(listener_and_state) => {
+                        let state = unsafe {
+                            std::mem::transmute::<u8, State>((listener_and_state & 3) as u8)
+                        };
+                        match state {
+                            State::Pending => {
+                                crate::die("Unreachable state");
+                            }
+                            State::Cancelled => {
+                                crate::die("Concurrent cancellation");
+                            }
+                            State::Ready => {
+                                // Already done, drop `value` and `thiz`
+                                unsafe {
+                                    (&mut *thiz.value.get()).assume_init_drop();
+                                };
+                            }
+                            State::Paniced => {
+                                // Paniced, drop `value` and `thiz`
+                                unsafe {
+                                    (&mut *thiz.value.get()).assume_init_drop();
+                                };
+                                panic!("Future paniced");
+                            }
+                        }
+                    }
+                }
+            }
+            State::Cancelled => {}
+            State::Ready => {
+                // Already done, drop `value` and `thiz`
+                unsafe {
+                    (&mut *thiz.value.get()).assume_init_drop();
+                };
+            }
+            State::Paniced => {
+                // Paniced, drop `value` and `thiz`
+                unsafe {
+                    (&mut *thiz.value.get()).assume_init_drop();
+                };
+                panic!("Future paniced");
+            }
+        }
     }
 
     pub(crate) fn resolve(thiz: Ptr<Self>, value: T) {
@@ -56,11 +133,15 @@ impl<'a, T: Send> FutureInner<'a, T> {
         let state = unsafe { std::mem::transmute::<u8, State>((listener_and_state & 3) as u8) };
         match state {
             State::Pending => {
-                // Notify listener
-                let listener =
-                    unsafe { &*((listener_and_state & !3usize) as *const FutureListenerErased) };
-                listener.notify(unsafe { thiz.as_ptr() } as usize);
-                // The listener will drop `thiz`
+                let listener_and_state = listener_and_state & !3usize;
+                if listener_and_state != 0 {
+                    // Notify listener
+                    let listener = unsafe {
+                        &*((listener_and_state & !3usize) as *const FutureListenerErased)
+                    };
+                    listener.notify(unsafe { thiz.as_ptr() } as usize);
+                }
+                // The consumer will drop `thiz`
                 std::mem::forget(thiz);
             }
             State::Cancelled => {
