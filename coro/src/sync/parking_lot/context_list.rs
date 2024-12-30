@@ -75,9 +75,12 @@ impl ContextList {
         } else if cx.list_next.is_none() {
             self.pop_back();
         } else {
-            let prev = unsafe { cx.list_prev.unwrap_unchecked() };
-            let next = unsafe { cx.list_prev.unwrap_unchecked() };
-            // prev.
+            let mut prev = unsafe { cx.list_prev.unwrap_unchecked() };
+            let mut next = unsafe { cx.list_prev.unwrap_unchecked() };
+            unsafe { prev.as_mut().list_next = Some(next) };
+            unsafe { next.as_mut().list_prev = Some(prev) };
+            cx.list_prev = None;
+            cx.list_next = None;
         }
     }
 }
