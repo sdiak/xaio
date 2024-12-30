@@ -89,6 +89,7 @@ impl<T: Sized> Ptr<T> {
             None
         }
     }
+
     /// Wraps an existing pointer
     ///
     /// # Parameters
@@ -103,6 +104,10 @@ impl<T: Sized> Ptr<T> {
     #[inline]
     pub unsafe fn from_raw_unchecked(raw: *mut T) -> Self {
         Self(raw as usize, PhantomData {})
+    }
+
+    pub unsafe fn from_raw_owned_unchecked(raw: *mut T) -> Self {
+        Self((raw as usize) | ALLOCATED_TAG, PhantomData {})
     }
 
     /// Consumes `self` and returns it as a raw pointer.
@@ -124,7 +129,7 @@ impl<T: Sized> Ptr<T> {
     /// Consumes `self` and returns it as a raw pointer
     ///
     /// # Safety
-    ///  Only usable for `Uniq<T>` built with `Uniq<T>::from_raw(...)`
+    ///  When `self.memory_is_owned()` the caller should call `Ptr::from_raw_owned_unchecked()` later to allow droping
     #[inline]
     pub unsafe fn into_raw_unchecked(mut self) -> *mut T {
         let raw = self.as_mut_ptr();

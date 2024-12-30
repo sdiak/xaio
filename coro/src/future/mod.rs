@@ -4,6 +4,7 @@ use crate::ptr::Ptr;
 use crate::task::{Task, TaskInner};
 use crate::{PhantomUnsend, PhantomUnsync};
 mod listener;
+use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{cell::UnsafeCell, mem::MaybeUninit};
@@ -24,10 +25,51 @@ pub enum State {
     Paniced = 3,
 }
 
+#[derive(Debug)]
+pub struct Future2<'a, T: Send>(Ptr<FutureInner<'a, T>>);
+
+impl<'a, T: Send> Drop for Future2<'a, T> {
+    fn drop(&mut self) {
+        let owned = unsafe { Ptr::from_raw_owned_unchecked(self.0.as_mut_ptr()) };
+        FutureInner::cancel(owned);
+    }
+}
+
+impl<'a, T: Send> Future2<'a, T> {
+    pub fn try_pending() -> Option<(Self, Promise<'a, T>)> {
+        Ptr::try_new(FutureInner::<'a, T>::pending()).map(|owned| {
+            let raw = unsafe { owned.into_raw_unchecked() }; // Promise owns the memory initialy
+            unsafe {
+                (
+                    Future2(Ptr::from_raw_unchecked(raw)),
+                    Promise(Ptr::from_raw_owned_unchecked(raw)),
+                )
+            }
+        })
+    }
+    // fn wait(self) ->
+}
+
+#[derive(Debug)]
+pub struct Promise<'a, T: Send>(Ptr<FutureInner<'a, T>>);
+
+impl<'a, T: Send> Promise<'a, T> {
+    pub fn resolve(self, value: T) {
+        FutureInner::resolve(self.0, value);
+    }
+}
+
 pub(crate) struct FutureInner<'a, T: Send> {
     listener_and_state: AtomicUsize,
     value: UnsafeCell<MaybeUninit<T>>,
     _lifetime: PhantomData<&'a FutureListenerErased>,
+}
+impl<'a, T: Send> Debug for FutureInner<'a, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FutureInner")
+            .field("state", &self.state(Ordering::Relaxed))
+            .finish_non_exhaustive()
+    }
 }
 
 // impl<T: Send, L: FutureListener> crate::collection::SListNode for FutureInner<T, L> {
@@ -101,7 +143,7 @@ impl<'a, T: Send> FutureInner<'a, T> {
             listener | State::Pending as u8 as usize,
             State::Pending as u8 as usize,
             Ordering::Release,
-            Ordering::Relaxed,
+            Ordering::Acquire,
         ) {
             Ok(_) => return true,
             Err(listener_and_state) => {
