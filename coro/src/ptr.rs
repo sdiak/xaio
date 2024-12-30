@@ -173,6 +173,12 @@ impl<T: Sized> Ptr<T> {
     pub fn memory_is_owned(&self) -> bool {
         (self.0 & ALLOCATED_TAG) != 0
     }
+
+    pub(crate) unsafe fn deallocate_without_dropping(self) {
+        let ptr: *mut T = (self.0 & !ALLOCATED_TAG) as _;
+        dealloc(ptr as _, Self::LAYOUT);
+        std::mem::forget(self);
+    }
 }
 
 impl<T: Sized> Deref for Ptr<T> {

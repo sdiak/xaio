@@ -7,6 +7,7 @@ struct FutureListenerVTable {
     notify: unsafe fn(*const (), usize),
     drop: unsafe fn(*mut ()),
 }
+#[repr(align(32))]
 pub struct FutureListenerErased {
     vtable: &'static FutureListenerVTable,
 }
@@ -15,8 +16,10 @@ impl FutureListenerErased {
         unsafe { (self.vtable.notify)(self as *const Self as _, token) };
     }
 }
+
+#[repr(align(32))]
 pub struct FutureListener2<FL: FutureListener> {
-    erased: FutureListenerErased,
+    vtable: &'static FutureListenerVTable,
     listener: FL,
 }
 impl<FL: FutureListener> FutureListener2<FL> {
@@ -32,9 +35,7 @@ impl<FL: FutureListener> FutureListener2<FL> {
     };
     pub fn new(listener: FL) -> Self {
         Self {
-            erased: FutureListenerErased {
-                vtable: &Self::VTABLE,
-            },
+            vtable: &Self::VTABLE,
             listener,
         }
     }
