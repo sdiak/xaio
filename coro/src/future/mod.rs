@@ -1,12 +1,12 @@
+use listener::{FutureListener, FutureListenerErased};
+
 use crate::ptr::Ptr;
 use crate::task::{Task, TaskInner};
 use crate::{PhantomUnsend, PhantomUnsync};
-use std::borrow::Borrow;
-use std::io::Result;
-use std::mem::ManuallyDrop;
-use std::sync::atomic::{AtomicI32, AtomicU8, Ordering};
-use std::time::Duration;
-use std::{cell::UnsafeCell, mem::MaybeUninit, ptr::NonNull, rc::Rc, sync::atomic::AtomicUsize};
+mod listener;
+use std::marker::PhantomData;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{cell::UnsafeCell, mem::MaybeUninit};
 
 #[derive(Debug)]
 pub struct Future<T: Task> {
@@ -19,50 +19,58 @@ pub struct Future<T: Task> {
 #[derive(Debug, PartialEq, Eq)]
 pub enum State {
     Pending = 0,
-    Cancelling = 1,
+    Cancelled = 1,
     Ready = 2,
     Paniced = 3,
 }
 
-pub trait FutureListener: Send {
-    fn notify(&self, token: usize);
-}
-pub(crate) struct FutureInner<T: Send, L: FutureListener> {
-    state: AtomicU8,
-    // link: crate::collection::SLink,
-    listener: L,
+pub(crate) struct FutureInner<'a, T: Send> {
+    listener_and_state: AtomicUsize,
     value: UnsafeCell<MaybeUninit<T>>,
+    _lifetime: PhantomData<&'a FutureListenerErased>,
 }
+
 // impl<T: Send, L: FutureListener> crate::collection::SListNode for FutureInner<T, L> {
 //     const OFFSET_OF_LINK: usize = std::mem::offset_of!(FutureInner<T, L>, link);
 // }
-impl<T: Send, L: FutureListener> FutureInner<T, L> {
+impl<'a, T: Send> FutureInner<'a, T> {
+    pub fn ready(val: T) -> Self {
+        Self {
+            listener_and_state: AtomicUsize::new(State::Ready as u8 as _),
+            value: UnsafeCell::new(MaybeUninit::new(val)),
+            _lifetime: PhantomData {},
+        }
+    }
     pub(crate) fn state(&self, order: Ordering) -> State {
-        unsafe { std::mem::transmute::<u8, State>(self.state.load(order)) }
+        unsafe { std::mem::transmute::<u8, State>((self.listener_and_state.load(order) & 3) as u8) }
     }
 
     pub(crate) fn resolve(thiz: Ptr<Self>, value: T) {
         assert!(thiz.state(Ordering::Relaxed) == State::Pending);
         // Perform the write
         unsafe { (&mut *thiz.value.get()).as_mut_ptr().write(value) };
-        // Commit the write
-        match thiz.state.compare_exchange(
-            State::Pending as u8,
-            State::Ready as u8,
-            Ordering::Release,
-            Ordering::Acquire,
-        ) {
-            Ok(_) => {
-                thiz.listener.notify(unsafe { thiz.as_ptr() } as usize);
+        // Commit the write (make it visible to listener)
+        let listener_and_state = thiz
+            .listener_and_state
+            .swap(State::Ready as u8 as usize, Ordering::AcqRel);
+        let state = unsafe { std::mem::transmute::<u8, State>((listener_and_state & 3) as u8) };
+        match state {
+            State::Pending => {
+                // Notify listener
+                let listener =
+                    unsafe { &*((listener_and_state & !3usize) as *const FutureListenerErased) };
+                listener.notify(unsafe { thiz.as_ptr() } as usize);
                 // The listener will drop `thiz`
                 std::mem::forget(thiz);
             }
-            Err(c) => {
-                assert!(c == State::Cancelling as u8);
+            State::Cancelled => {
                 // Cancelled, drop `value` and `thiz`
                 unsafe {
                     (&mut *thiz.value.get()).assume_init_drop();
                 }
+            }
+            _ => {
+                unreachable!("Future is already resolved");
             }
         }
     }
@@ -95,7 +103,7 @@ impl<T: Task> Future<T> {
                 State::Pending => {
                     std::thread::park();
                 }
-                State::Cancelling => {
+                State::Cancelled => {
                     std::thread::park();
                 }
                 State::Ready => return unsafe { inner.take() },

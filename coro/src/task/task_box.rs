@@ -78,7 +78,7 @@ impl<T: Task> TaskInner<T> {
                 State::Pending => {
                     std::thread::park();
                 }
-                State::Cancelling => {
+                State::Cancelled => {
                     std::thread::park();
                 }
                 State::Ready => return thiz.output.take().unwrap(),

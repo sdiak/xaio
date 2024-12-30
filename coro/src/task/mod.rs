@@ -17,7 +17,7 @@ impl Context {
         unsafe { std::mem::transmute::<u8, State>(self.state.load(order)) }
     }
     pub fn is_cancelled(&self) -> bool {
-        self.state(std::sync::atomic::Ordering::Relaxed) == State::Cancelling
+        self.state(std::sync::atomic::Ordering::Relaxed) == State::Cancelled
     }
 }
 pub trait Task {
