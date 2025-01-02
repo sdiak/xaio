@@ -1,9 +1,7 @@
 [workspace]
 
-members = [ "libdir",
-    "xaio-core2",
-    "xaio-core",
-    "xaio-future", "coro",
+members = [
+    "ucontext",
 ]
 resolver = "2"
 
