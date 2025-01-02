@@ -28,7 +28,7 @@ pub struct Context {
     data: ContextData,
 }
 impl Context {
-    pub fn with_current<T>(f: impl FnOnce(&mut Self) -> T) -> T {
+    pub(crate) fn with_current<T>(f: impl FnOnce(&mut Self) -> T) -> T {
         let coro = COROUTINE.get();
         if coro.is_null() {
             // SAFETY: only a single borrow using Context::with_current
