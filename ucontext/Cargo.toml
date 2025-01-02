@@ -1,0 +1,13 @@
+[package]
+name = "ucontext"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cfg-if = { workspace = true }
+libc = { workspace = true }
+log = { workspace = true }
+page_size = "0.6.0"
+
+[dev-dependencies]
+crabgrind = "0.1"
