@@ -5,7 +5,8 @@ use std::{
     thread::LocalKey,
 };
 
-use crate::scheduler::Coroutine;
+// use crate::scheduler::Coroutine;
+type Coroutine = usize;
 
 use super::tagged_ptr::TaggedPointer;
 
