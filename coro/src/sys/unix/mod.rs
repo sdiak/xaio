@@ -3,10 +3,10 @@ use super::stack::Stack;
 #[cfg_attr(target_arch = "x86_64", path = "x86_64.rs")]
 pub mod asm;
 
-pub type UCtxStartCb = unsafe extern "C" fn(*mut libc::c_void);
+pub type UCtxStartCb = unsafe extern "C" fn(*mut ());
 #[repr(C)]
 pub struct UCtx {
-    stack_pointer: *mut libc::c_void,
+    stack_pointer: *mut (),
 }
 
 extern "C" fn __unreachable() {
@@ -16,8 +16,9 @@ extern "C" fn __unreachable() {
 
 unsafe extern "C" {
     unsafe fn __xaio_uctx_asm_boot();
-    unsafe fn __xaio_uctx_asm_swap(from: *mut *mut libc::c_void, to: *mut libc::c_void);
-    unsafe fn __xaio_uctx_asm_get_sp() -> *mut libc::c_void;
+    unsafe fn __xaio_uctx_asm_swap(from: *mut *mut (), to: *mut ());
+    unsafe fn __xaio_uctx_asm_get_sp() -> *mut ();
+    unsafe fn __xaio_uctx_asm_prefetch(sp: *const ());
 }
 
 impl UCtx {
@@ -26,7 +27,7 @@ impl UCtx {
             stack_pointer: unsafe { __xaio_uctx_asm_get_sp() },
         }
     }
-    pub fn new(start_cb: UCtxStartCb, start_arg: *mut libc::c_void) -> Option<Self> {
+    pub fn new(start_cb: UCtxStartCb, start_arg: *mut ()) -> Option<Self> {
         if let Some(stack) = Stack::new() {
             unsafe {
                 let mut sp: *mut usize = stack.base.offset(stack.size) as _;
@@ -49,7 +50,7 @@ impl UCtx {
                 sp = sp.offset(-6);
                 // WARNING: stack MUST be aligned on 16 bytes
                 Some(Self {
-                    stack_pointer: sp as *mut libc::c_void,
+                    stack_pointer: sp as *mut (),
                 })
             }
         } else {
@@ -73,10 +74,10 @@ mod test {
         thiz: Option<UCtx>,
         scheduler: *mut UCtx,
     }
-    extern "C" fn start_scheduler_f(arg: *mut libc::c_void) {
+    extern "C" fn start_scheduler_f(arg: *mut ()) {
         println!("start_scheduler_f {:?}", arg);
     }
-    extern "C" fn start_f(arg: *mut libc::c_void) {
+    extern "C" fn start_f(arg: *mut ()) {
         println!("start {:?}", arg);
         let arg = unsafe { &mut *(arg as *mut start_arg) };
         let thiz = arg.thiz.as_mut().unwrap();

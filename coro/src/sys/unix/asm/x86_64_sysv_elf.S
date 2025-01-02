@@ -36,6 +36,14 @@ __xaio_uctx_asm_boot:
 		jmp rax  /* call task_start_cb(rdi) */
   .size __xaio_uctx_asm_boot, .-__xaio_uctx_asm_boot
 
+  .globl  __xaio_uctx_asm_prefetch
+  .type __xaio_uctx_asm_prefetch, @function
+  .align 16
+__xaio_uctx_asm_prefetch:
+		prefetcht2 [rdi]
+		ret
+  .size __xaio_uctx_asm_prefetch, .-__xaio_uctx_asm_prefetch
+
 
   .globl  __xaio_uctx_asm_get_sp
   .type __xaio_uctx_asm_get_sp, @function
@@ -44,5 +52,5 @@ __xaio_uctx_asm_get_sp:
 	mov rax, rsp
 	ret
   .size __xaio_uctx_asm_get_sp, .-__xaio_uctx_asm_get_sp
-  
+
   .section	.note.GNU-stack,"",@progbits
