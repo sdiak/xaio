@@ -58,12 +58,26 @@ impl<T> TaggedPointer<T> {
         self.addr_and_tag & TAGGED_POINTER_MASK
     }
     #[inline(always)]
-    pub(crate) fn addr(&self) -> Option<NonNull<T>> {
+    pub(crate) fn get(&self) -> Option<NonNull<T>> {
         TaggedPointer::from_usize(self.addr_and_tag & !TAGGED_POINTER_MASK)
     }
+
     #[inline(always)]
-    pub(crate) fn set_addr(&mut self, addr: Option<NonNull<T>>) {
+    pub(crate) fn pop(&mut self) -> Option<NonNull<T>> {
+        let old = TaggedPointer::from_usize(self.addr_and_tag & !TAGGED_POINTER_MASK);
+        self.addr_and_tag = self.tag();
+        old
+    }
+
+    #[inline(always)]
+    pub(crate) fn set(&mut self, addr: Option<NonNull<T>>) {
         let addr = TaggedPointer::to_usize(addr);
+        debug_assert!((addr & TAGGED_POINTER_MASK) == 0, "Alignement is respected");
+        self.addr_and_tag = self.tag() | addr;
+    }
+    #[inline(always)]
+    pub(crate) fn set_non_null(&mut self, addr: NonNull<T>) {
+        let addr = addr.as_ptr() as usize;
         debug_assert!((addr & TAGGED_POINTER_MASK) == 0, "Alignement is respected");
         self.addr_and_tag = self.tag() | addr;
     }

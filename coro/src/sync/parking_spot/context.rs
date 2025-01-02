@@ -5,6 +5,8 @@ use std::{
     thread::LocalKey,
 };
 
+use crate::scheduler::Coroutine;
+
 use super::tagged_ptr::TaggedPointer;
 
 #[repr(usize)]
@@ -18,14 +20,14 @@ thread_local! {
     static COROUTINE: Cell<*mut Context> = const { Cell::new(std::ptr::null_mut()) };
 }
 
-type Coroutine = usize; // TODO:
 union ContextData {
     thread: ManuallyDrop<std::thread::Thread>,
     coroutine: ManuallyDrop<Coroutine>,
 }
 pub struct Context {
-    list_next: TaggedPointer<Context>,
+    pub(super) list_next: TaggedPointer<Context>,
     data: ContextData,
+    pub(super) blocking_token: usize,
 }
 impl Context {
     pub(crate) fn with_current<T>(f: impl FnOnce(&mut Self) -> T) -> T {
@@ -44,6 +46,7 @@ impl Context {
             data: ContextData {
                 thread: ManuallyDrop::new(std::thread::current()),
             },
+            blocking_token: 0,
         }
     }
 
