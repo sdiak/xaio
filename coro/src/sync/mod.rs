@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 pub mod parking_lot;
+pub mod parking_spot;
 mod smpsc;
 pub(crate) use smpsc::Queue;
 
