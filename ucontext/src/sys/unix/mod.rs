@@ -1,5 +1,8 @@
 use std::ptr::NonNull;
 
+#[cfg_attr(target_arch = "x86_64", path = "x86_64.rs")]
+pub mod asm;
+
 cfg_if::cfg_if! {
     if #[cfg(not(any(
         target_os = "openbsd",

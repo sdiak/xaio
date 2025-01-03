@@ -6,6 +6,7 @@ cfg_if::cfg_if! {
         pub use unix::*;
     }
 }
+
 struct ValgrindStackId {
     #[cfg(test)]
     id: usize,
@@ -74,12 +75,31 @@ pub struct Stack {
     valgrind_stack_id: ValgrindStackId,
 }
 
+pub struct StackPool {
+    total_size: usize,
+}
+impl StackPool {
+    pub fn new(total_size: usize) -> Self {
+        Self {
+            total_size: total_size,
+        }
+    }
+    pub fn total_size(&self) -> usize {
+        self.total_size
+    }
+    fn get(&mut self, total_size: usize) -> Option<NonNull<u8>> {
+        None // TODO:
+    }
+}
+
 impl Drop for Stack {
     fn drop(&mut self) {
-        self.valgrind_stack_id.deregister();
-        stack_dealloc(self.total_size, Self::guard_size(), unsafe {
-            NonNull::new_unchecked(self.base)
-        });
+        if !self.base.is_null() {
+            self.valgrind_stack_id.deregister();
+            stack_dealloc(self.total_size, Self::guard_size(), unsafe {
+                NonNull::new_unchecked(self.base)
+            });
+        }
     }
 }
 
@@ -98,25 +118,57 @@ impl Stack {
         page_size::get_granularity()
     }
 
+    #[inline(always)]
+    pub fn total_size(&self) -> usize {
+        self.total_size
+    }
+
+    #[inline(always)]
+    pub fn size(&self) -> usize {
+        self.total_size - Self::guard_size()
+    }
+
+    #[inline(always)]
+    pub(crate) fn base(&mut self) -> *mut u8 {
+        self.base
+    }
+
+    pub fn allocate(&mut self, pool: &mut StackPool) -> bool {
+        assert!(self.base.is_null());
+        if let Some(base) = pool.get(self.total_size) {
+            self.base = base.as_ptr();
+            true
+        } else if let Some(base) = stack_alloc(self.total_size, Self::guard_size()) {
+            self.base = base.as_ptr();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn root_stack() -> Self {
+        Self {
+            total_size: 0,
+            base: std::ptr::null_mut(),
+            valgrind_stack_id: ValgrindStackId::default(),
+        }
+    }
+
     /// Returns a new stack with the given `size_hint` or `None` when the system is out of memory
-    pub fn with_size(mut size_hint: usize) -> Option<Self> {
+    pub fn with_size(mut size_hint: usize) -> Self {
         let guard_size = Self::guard_size();
         let page_align_mask = Self::page_size() - 1;
         size_hint += guard_size + (size_hint == 0) as usize;
         size_hint = (size_hint + page_align_mask) & !page_align_mask;
-        if let Some(base) = stack_alloc(size_hint, guard_size) {
-            Some(Self {
-                total_size: size_hint,
-                base: base.as_ptr(),
-                valgrind_stack_id: ValgrindStackId::default(),
-            })
-        } else {
-            None
+        Self {
+            total_size: size_hint,
+            base: std::ptr::null_mut(),
+            valgrind_stack_id: ValgrindStackId::default(),
         }
     }
 
     /// Returns a new stack with the default size or `None` when the system is out of memory
-    pub fn new() -> Option<Stack> {
+    pub fn new() -> Stack {
         Self::with_size(Self::DEFAULT_TOTAL_SIZE - Self::guard_size())
     }
 }
@@ -149,22 +201,22 @@ mod tests {
 
     #[test]
     fn test_page() {
-        let stack = Stack::with_size(0).unwrap();
+        let stack = Stack::with_size(0);
         assert_eq!(stack.total_size, Stack::page_size() + Stack::guard_size());
 
-        let stack = Stack::with_size(Stack::page_size() - 1).unwrap();
+        let stack = Stack::with_size(Stack::page_size() - 1);
         assert_eq!(stack.total_size, Stack::page_size() + Stack::guard_size());
 
-        let stack = Stack::with_size(Stack::page_size()).unwrap();
+        let stack = Stack::with_size(Stack::page_size());
         assert_eq!(stack.total_size, Stack::page_size() + Stack::guard_size());
 
-        let stack = Stack::with_size(Stack::page_size() * 4).unwrap();
+        let stack = Stack::with_size(Stack::page_size() * 4);
         assert_eq!(
             stack.total_size,
             Stack::page_size() + Stack::guard_size() * 4
         );
 
-        let stack = Stack::new().unwrap();
+        let stack = Stack::new();
         assert_eq!(stack.total_size, Stack::DEFAULT_TOTAL_SIZE);
     }
 }
