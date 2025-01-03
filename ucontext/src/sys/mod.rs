@@ -169,6 +169,8 @@ impl Stack {
             false
         }
     }
+    /// # Safety
+    ///  - Stack **MUST NOT** be used
     pub unsafe fn deallocate(&mut self, pool: &mut StackPool) {
         if !self.bottom.is_null() {
             self.valgrind_stack_id.deregister();
