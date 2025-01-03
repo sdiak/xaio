@@ -15,7 +15,10 @@ impl Drop for UContext {
 }
 
 impl UContext {
-    pub fn pinned<F: FnOnce() + 'static>(f: F, stack_size_hint: usize) -> Option<Self> {
+    pub fn pinned<F, O>(f: F, stack_size_hint: usize) -> Option<Self>
+    where
+        F: FnOnce() -> O + 'static,
+    {
         InnerLocal::make_with_size(f, stack_size_hint).map(Self)
     }
     pub fn movable<F: FnOnce() + Send + 'static>(f: F, stack_size_hint: usize) -> Option<Self> {
@@ -69,6 +72,7 @@ type DropErasedCb = unsafe extern "C" fn(thiz: *mut InnerErazed);
 const FLAG_LOCAL: usize = 1usize << 0;
 const FLAG_STARTED: usize = 1usize << 1;
 const FLAG_DONE: usize = 1usize << 2;
+const FLAG_HAS_OUTPUT: usize = 1usize << 3;
 thread_local! {
     static CURRENT_CTX: std::cell::Cell<*const InnerErazed>  = const { std::cell::Cell::new(std::ptr::null_mut()) };
 }
@@ -180,11 +184,12 @@ impl InnerErazed {
     }
 }
 
-struct InnerLocal<F: FnOnce() + 'static> {
+struct InnerLocal<F: FnOnce() -> O + 'static, O> {
     as_inner: InnerErazed,
+    o: MaybeUninit<O>,
     f: MaybeUninit<F>,
 }
-impl<F: FnOnce() + 'static> InnerLocal<F> {
+impl<F: FnOnce() -> O + 'static, O> InnerLocal<F, O> {
     const VTABLE: VTable = VTable {
         start: Self::start,
         drop_erased: Self::drop_erased,
@@ -204,6 +209,7 @@ impl<F: FnOnce() + 'static> InnerLocal<F> {
             unsafe {
                 thiz.write(Self {
                     as_inner: InnerErazed::make(&Self::VTABLE, FLAG_LOCAL, stack_size_hint),
+                    o: MaybeUninit::uninit(),
                     f: MaybeUninit::new(f),
                 })
             };
@@ -219,22 +225,28 @@ impl<F: FnOnce() + 'static> InnerLocal<F> {
         let thiz = unsafe { &mut *std::mem::transmute::<*mut InnerErazed, *mut Self>(thiz) };
         println!("drop_erased1");
         if (thiz.as_inner.flags & FLAG_DONE) == 0 {
-            println!("drop_erased2");
+            println!(" - drop_erased: cb");
             thiz.f.assume_init_drop();
+        }
+        if (thiz.as_inner.flags & FLAG_HAS_OUTPUT) == 0 {
+            println!(" - drop_erased: cb");
+            thiz.o.assume_init_drop();
         }
     }
     unsafe extern "C" fn start(thiz: *mut InnerErazed) {
         let thiz = unsafe { &mut *std::mem::transmute::<*mut InnerErazed, *mut Self>(thiz) };
-        (unsafe { thiz.f.assume_init_read() })();
+        thiz.o.write((unsafe { thiz.f.assume_init_read() })());
+        thiz.as_inner.flags |= FLAG_HAS_OUTPUT;
         thiz.as_inner.start_epilog();
     }
 }
 
-struct InnerShared<F: FnOnce() + Send + 'static> {
+struct InnerShared<F: FnOnce() -> O + Send + 'static, O: Send> {
     as_inner: InnerErazed,
+    o: MaybeUninit<O>,
     f: MaybeUninit<F>,
 }
-impl<F: FnOnce() + Send + 'static> InnerShared<F> {
+impl<F: FnOnce() -> O + Send + 'static, O: Send> InnerShared<F, O> {
     const VTABLE: VTable = VTable {
         start: Self::start,
         drop_erased: Self::drop_erased,
@@ -253,6 +265,7 @@ impl<F: FnOnce() + Send + 'static> InnerShared<F> {
             unsafe {
                 thiz.write(Self {
                     as_inner: InnerErazed::make(&Self::VTABLE, 0, stack_size_hint),
+                    o: MaybeUninit::uninit(),
                     f: MaybeUninit::new(f),
                 })
             };
@@ -268,13 +281,17 @@ impl<F: FnOnce() + Send + 'static> InnerShared<F> {
         let thiz = unsafe { &mut *std::mem::transmute::<*mut InnerErazed, *mut Self>(thiz) };
         println!("drop_erased1");
         if (thiz.as_inner.flags & FLAG_DONE) == 0 {
-            println!("drop_erased2");
+            println!(" - drop_erased: cb");
             thiz.f.assume_init_drop();
+        }
+        if (thiz.as_inner.flags & FLAG_HAS_OUTPUT) == 0 {
+            println!(" - drop_erased: cb");
+            thiz.o.assume_init_drop();
         }
     }
     unsafe extern "C" fn start(thiz: *mut InnerErazed) {
         let thiz = unsafe { &mut *std::mem::transmute::<*mut InnerErazed, *mut Self>(thiz) };
-        (unsafe { thiz.f.assume_init_read() })();
+        thiz.o.write((unsafe { thiz.f.assume_init_read() })());
         thiz.as_inner.start_epilog();
     }
 }
