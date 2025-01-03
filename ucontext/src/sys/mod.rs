@@ -12,20 +12,29 @@ struct ValgrindStackId {
     id: usize,
 }
 
-use std::ptr::NonNull;
+use std::{ops::Range, ptr::NonNull};
 
 #[cfg(test)]
 use crabgrind as cg;
 
 impl ValgrindStackId {
     const INVALID: usize = usize::MAX;
+    const fn default() -> Self {
+        cfg_if::cfg_if! {
+            if #[cfg(test)] {
+                Self { id: Self::INVALID }
+            } else {
+                Self {}
+            }
+        }
+    }
 
-    fn register(&mut self, _size: usize, _base: *mut u8) {
+    fn register(&mut self, _bottom: *mut libc::c_void, _top: *mut libc::c_void) {
         cfg_if::cfg_if! {
             if #[cfg(test)] {
                 debug_assert!(self.id == Self::INVALID);
                 self.id = if cg::run_mode() != cg::RunMode::Native {
-                    cg::memcheck::stack::register(_base as _, unsafe { _base.offset(_size as _) } as _)
+                    cg::memcheck::stack::register(_bottom, _top)
                 } else {
                     usize::MAX
                 }
@@ -53,24 +62,13 @@ impl ValgrindStackId {
         }
     }
 }
-impl Default for ValgrindStackId {
-    fn default() -> Self {
-        cfg_if::cfg_if! {
-            if #[cfg(test)] {
-                Self { id: Self::INVALID }
-            } else {
-                Self {}
-            }
-        }
-    }
-}
 
 /// A coroutine stack
 pub struct Stack {
     /// The total size of the stack (including guarded pages)
     total_size: usize,
     /// The start end of the stack to use as a coroutine stack
-    base: *mut u8,
+    bottom: *mut u8,
     /// The valdring stack identifier (When running tests under valgrind)
     valgrind_stack_id: ValgrindStackId,
 }
@@ -94,10 +92,10 @@ impl StackPool {
 
 impl Drop for Stack {
     fn drop(&mut self) {
-        if !self.base.is_null() {
+        if !self.bottom.is_null() {
             self.valgrind_stack_id.deregister();
             stack_dealloc(self.total_size, Self::guard_size(), unsafe {
-                NonNull::new_unchecked(self.base)
+                NonNull::new_unchecked(self.bottom)
             });
         }
     }
@@ -129,27 +127,66 @@ impl Stack {
     }
 
     #[inline(always)]
-    pub(crate) fn base(&mut self) -> *mut u8 {
-        self.base
+    pub(crate) fn bottom(&self) -> *mut u8 {
+        self.bottom
+    }
+    #[inline(always)]
+    pub(crate) fn top(&self) -> *mut u8 {
+        unsafe { self.bottom.offset(self.size() as isize) }
+    }
+
+    #[inline(always)]
+    pub fn register(&mut self) {
+        self.valgrind_stack_id
+            .register(self.bottom() as _, self.top() as _);
+    }
+    #[inline(always)]
+    pub fn deregister(&mut self) {
+        self.valgrind_stack_id.deregister();
+    }
+    #[inline(always)]
+    pub fn is_registered(&self) -> bool {
+        self.valgrind_stack_id.is_registered()
     }
 
     pub fn allocate(&mut self, pool: &mut StackPool) -> bool {
-        assert!(self.base.is_null());
+        assert!(self.bottom.is_null());
         if let Some(base) = pool.get(self.total_size) {
-            self.base = base.as_ptr();
+            self.bottom = base.as_ptr();
             true
         } else if let Some(base) = stack_alloc(self.total_size, Self::guard_size()) {
-            self.base = base.as_ptr();
+            self.bottom = base.as_ptr();
+            println!(
+                "::allocate(), bottom:{:?}, top:{:?}",
+                self.bottom(),
+                self.top()
+            );
             true
         } else {
             false
         }
     }
 
-    pub fn root_stack() -> Self {
+    pub fn guard_range(&self) -> Range<usize> {
+        if self.bottom.is_null() {
+            Range { start: 0, end: 0 }
+        } else {
+            let guard = if crate::sys::stack_growth_downward() {
+                unsafe { self.bottom.offset(-(Self::guard_size() as isize)) }
+            } else {
+                unsafe { self.bottom.offset(self.size() as isize) }
+            } as usize;
+            Range {
+                start: guard,
+                end: guard + Self::guard_size(),
+            }
+        }
+    }
+
+    pub const fn root_stack() -> Self {
         Self {
             total_size: 0,
-            base: std::ptr::null_mut(),
+            bottom: std::ptr::null_mut(),
             valgrind_stack_id: ValgrindStackId::default(),
         }
     }
@@ -162,7 +199,7 @@ impl Stack {
         size_hint = (size_hint + page_align_mask) & !page_align_mask;
         Self {
             total_size: size_hint,
-            base: std::ptr::null_mut(),
+            bottom: std::ptr::null_mut(),
             valgrind_stack_id: ValgrindStackId::default(),
         }
     }

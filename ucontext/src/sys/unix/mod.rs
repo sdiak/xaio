@@ -36,11 +36,21 @@ pub(crate) fn stack_alloc(total_size: usize, guard_size: usize) -> Option<NonNul
     } else {
         let mut base = base as *mut u8;
         let mut guard = base;
+        let top = base;
+        let top = unsafe { top.offset(total_size as isize) };
         if crate::sys::stack_growth_downward() {
-            guard = unsafe { guard.offset((total_size - guard_size) as isize) }
-        } else {
             base = unsafe { base.offset(guard_size as isize) };
+        } else {
+            guard = unsafe { guard.offset((total_size - guard_size) as isize) }
         }
+        println!(
+            "stack_alloc() guarq:{:?}, bottom:{:?}, bottom-guard:{:?}, top:{:?}, top-bottom:{:?}",
+            guard,
+            base,
+            (base as isize) - (guard as isize),
+            top,
+            (top as isize) - (base as isize),
+        );
         assert!(unsafe { libc::mprotect(guard as _, guard_size, libc::PROT_NONE) } >= 0);
         Some(unsafe { NonNull::new_unchecked(base) })
     }
@@ -48,7 +58,7 @@ pub(crate) fn stack_alloc(total_size: usize, guard_size: usize) -> Option<NonNul
 
 pub(crate) fn stack_dealloc(total_size: usize, guard_size: usize, base: NonNull<u8>) {
     let mut base = base.as_ptr();
-    if !crate::sys::stack_growth_downward() {
+    if crate::sys::stack_growth_downward() {
         base = unsafe { base.offset(-(guard_size as isize)) };
     }
     assert!(unsafe { libc::munmap(base as _, total_size) } >= 0);

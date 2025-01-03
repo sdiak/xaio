@@ -14,9 +14,10 @@ cfg_if::cfg_if! {
         std::arch::global_asm!(include_str!("asm/x86_64_sysv_macho.S")); // TODO:
     } else {
         std::arch::global_asm!(include_str!("asm/x86_64_sysv_elf.S"));
-        pub(crate) fn setup_coroutine_on_stack(stack: &mut crate::sys::Stack, start_cb: StartCb, start_arg: *mut ()) {
+        pub(crate) fn setup_coroutine_on_stack(stack: &mut crate::sys::Stack, start_cb: StartCb, start_arg: *mut ()) -> *mut () {
             unsafe {
-                let mut sp: *mut usize = stack.base().offset(stack.size() as isize) as _;
+                let mut sp: *mut usize = stack.top() as _;
+                println!("ICI: sp:{:?}", sp);
                 // Leave 128 bytes at the top of the stack
                 sp = sp.offset(-16);
                 // Unreachable return address
@@ -35,6 +36,7 @@ cfg_if::cfg_if! {
                 // rbp, rbx, r12, r13, r14 and r15 in mbrt_uctx_asm_sysv_x86_64.S
                 sp = sp.offset(-6);
                 // WARNING: stack MUST be aligned on 16 bytes
+                sp as _
             }
         }
     }
