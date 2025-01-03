@@ -88,6 +88,9 @@ impl StackPool {
     fn get(&mut self, total_size: usize) -> Option<NonNull<u8>> {
         None // TODO:
     }
+    fn put(&mut self, total_size: usize, base: NonNull<u8>) -> bool {
+        false
+    }
 }
 
 impl Drop for Stack {
@@ -164,6 +167,19 @@ impl Stack {
             true
         } else {
             false
+        }
+    }
+    pub unsafe fn deallocate(&mut self, pool: &mut StackPool) {
+        if !self.bottom.is_null() {
+            self.valgrind_stack_id.deregister();
+            if !pool.put(self.total_size, unsafe {
+                NonNull::new_unchecked(self.bottom as _)
+            }) {
+                stack_dealloc(self.total_size, Self::guard_size(), unsafe {
+                    NonNull::new_unchecked(self.bottom)
+                });
+            }
+            self.bottom = std::ptr::null_mut();
         }
     }
 
